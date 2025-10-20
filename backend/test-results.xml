@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="5" failures="0" errors="0" time="4.025">
+  <testsuite name="HealthController" errors="0" failures="0" skipped="0" timestamp="2025-09-24T16:52:47" time="2.671" tests="5">
+    <testcase classname="HealthController health should return health status" name="HealthController health should return health status" time="0.003">
+    </testcase>
+    <testcase classname="HealthController health should return valid timestamp format" name="HealthController health should return valid timestamp format" time="0.002">
+    </testcase>
+    <testcase classname="HealthController health should return consistent status" name="HealthController health should return consistent status" time="0">
+    </testcase>
+    <testcase classname="HealthController cors should return cors configuration" name="HealthController cors should return cors configuration" time="0">
+    </testcase>
+    <testcase classname="HealthController cors should return default cors when no env var" name="HealthController cors should return default cors when no env var" time="0">
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,3 @@
+[submodule "AcadUSS_IAC"]
+	path = AcadUSS_IAC
+	url = https://nperezm6@dev.azure.com/nperezm6/AcadUSS/_git/AcadUSS_IAC

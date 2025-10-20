@@ -1,0 +1,88 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: Sonar_Variables
+  - name: SONAR_TOKEN
+    value: '0a11f6388142a27aac0330b7b86bfdf386e87461'
+  - name: SONAR_PROJECT_KEY
+    value: 'nperezm6_AcadUSS_back'
+  - name: SONAR_ORGANIZATION
+    value: 'nperezm6'
+
+steps:
+- task: NodeTool@0
+  inputs:
+    versionSpec: '18.x'
+  displayName: 'Install Node'
+
+- script: |
+    npm install
+  displayName: 'npm install'
+
+- script: |
+    npm ci
+    npm run lint || true
+    npm run lint:report || true
+    npm run test:coverage
+    npm run build
+  displayName: 'Lint, Test, Build'
+
+# Cache node_modules (optional)
+- task: Cache@2
+  inputs:
+    key: "npm | package-lock.json"
+    restoreKeys: |
+      npm |
+    path: $(Pipeline.Workspace)/.npm
+
+# Publish test results
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: 'JUnit'
+    testResultsFiles: |
+      **/test-results.xml
+      test-results.xml
+    failTaskOnFailedTests: true
+
+# SonarCloud analysis (uses pipeline variables: SONAR_TOKEN, SONAR_PROJECT_KEY, SONAR_ORGANIZATION)
+- script: |
+    echo "Starting SonarCloud analysis"
+    # Use npx to run sonar-scanner so we don't need to add the scanner binary to the repo.
+    npx -y sonar-scanner \
+      -Dsonar.projectKey=$(SONAR_PROJECT_KEY) \
+      -Dsonar.organization=$(SONAR_ORGANIZATION) \
+      -Dsonar.sources=src \
+      -Dsonar.tests=test \
+      -Dsonar.javascript.lcov.reportPaths=**/coverage/lcov.info \
+      -Dsonar.typescript.lcov.reportPaths=**/coverage/lcov.info \
+      -Dsonar.typescript.eslint.reportPaths=eslint-report.json \
+      -Dsonar.host.url=https://sonarcloud.io \
+      -Dsonar.login=$(SONAR_TOKEN) \
+      -Dsonar.qualitygate.wait=true
+  displayName: 'SonarCloud analysis'
+
+# OWASP ZAP Security Scan with improved setup
+- script: |
+    chmod +x scripts/security-analysis.sh
+    ./scripts/security-analysis.sh
+  displayName: 'OWASP ZAP Security Scan'
+  continueOnError: true
+
+# Publish security reports
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: 'reports/security'
+    artifactName: 'security-reports'
+  displayName: 'Publish Security Reports'
+  continueOnError: true
+
+# Publish build artifacts
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: 'dist'
+    ArtifactName: 'app-dist'
+    publishLocation: 'Container'
