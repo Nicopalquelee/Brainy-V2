@@ -13,8 +13,23 @@ function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [userData, setUserData] = useState<unknown>(null);
   const [showRegister, setShowRegister] = useState(false);
-  const [showUpload, setShowUpload] = useState(false);
-  const [showChat, setShowChat] = useState(false);
+  const [view, setView] = useState<'home' | 'upload' | 'chat'>('home');
+  const [pendingAnchor, setPendingAnchor] = useState<null | 'malla'>(null);
+
+  // Si se pidió navegar a una ancla del home (malla), esperar a que estemos en home y hacer scroll suave
+  useEffect(() => {
+    if (view === 'home' && pendingAnchor) {
+      const id = pendingAnchor;
+      setPendingAnchor(null);
+      // Timeout corto para asegurar que el DOM del home esté renderizado
+      setTimeout(() => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 0);
+    }
+  }, [view, pendingAnchor]);
 
   useEffect(() => {
     if (token) {
@@ -47,35 +62,58 @@ function App() {
       />
     );
   }
-
-  // Mostrar el chatbot si está activo
-  if (showChat) {
-    return <BrainyChat onBack={() => setShowChat(false)} />;
+  // Pantalla completa para chat o subir apunte
+  if (view === 'chat' || view === 'upload') {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex flex-col">
+        <Header
+          userName={(userData as any)?.full_name || (userData as any)?.username}
+          onLogout={() => {
+            localStorage.removeItem('token');
+            setToken(null);
+            setUserData(null);
+          }}
+          onUploadClick={() => setView('upload')}
+          onChatClick={() => setView('chat')}
+          onHomeClick={() => setView('home')}
+          onCurriculumClick={() => {
+            setView('home');
+            setPendingAnchor('malla');
+          }}
+        />
+        <main className="flex-1 min-h-0">
+          <div className="h-full">
+            {view === 'chat' && <BrainyChat onBack={() => setView('home')} />}
+            {view === 'upload' && (
+              <UploadApuntePage onBack={() => setView('home')} onUploaded={() => setView('home')} />
+            )}
+          </div>
+        </main>
+      </div>
+    );
   }
 
-  // Mostrar la página de Subir Apunte como vista aparte
-  if (showUpload) {
-    return <UploadApuntePage onBack={() => setShowUpload(false)} onUploaded={() => setShowUpload(false)} />;
-  }
-
+  // Vista dashboard por defecto
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Header 
-        userName={(userData as any)?.full_name || (userData as any)?.username} 
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <Header
+        userName={(userData as any)?.full_name || (userData as any)?.username}
         onLogout={() => {
           localStorage.removeItem('token');
           setToken(null);
           setUserData(null);
-        }} 
-        onUploadClick={() => setShowUpload(true)}
-        onChatClick={() => setShowChat(true)}
+        }}
+        onUploadClick={() => setView('upload')}
+        onChatClick={() => setView('chat')}
+        onHomeClick={() => setView('home')}
+        onCurriculumClick={() => {
+          setView('home');
+          setPendingAnchor('malla');
+        }}
       />
-      
-      {/* Contenido principal - ahora ocupa todo el ancho */}
-      <main className="min-h-screen">
-        <div className="max-w-7xl mx-auto p-6">
+      <main className="flex-1">
+        <div className="max-w-7xl mx-auto p-6 space-y-6">
           <StatsCard />
-          {/* El formulario de subida ahora es una página separada */}
           <NotesGrid />
           <Curriculum />
         </div>

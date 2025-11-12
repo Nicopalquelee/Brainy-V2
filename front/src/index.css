@@ -3,6 +3,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* App layout: evitar scroll de la página y usar sólo scroll internos */
+/* Permitir scroll de página para no ocultar KPIs/tabs globales. */
+html, body, #root {
+  min-height: 100%;
+}
+/* Quitar el overflow hidden global; gestionamos scroll dentro de cada vista. */
+/* body { overflow: hidden; } */
+
 :root {
   --background: hsl(222.2, 84%, 4.9%);
   --foreground: hsl(210, 40%, 98%);

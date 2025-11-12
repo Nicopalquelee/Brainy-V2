@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenAI } from 'openai';
 import { DocumentsService } from '../documents/documents.service';
+import { buildSubjectAliases } from './subjects';
 import { PdfProcessorService } from '../documents/pdf-processor.service';
 import { supabaseAdmin as supabase, Conversation, Message } from '../config/supabase';
 
@@ -56,6 +57,7 @@ export class ChatbotService {
 - Cita las fuentes de forma natural
 - Si no hay documentos específicos, busca en la base de datos de apuntes
 - Muestra apuntes disponibles de forma simple: solo título y materia
+ - Nunca digas frases como "no tengo acceso a documentos"; si no se te han proporcionado documentos en el contexto, continúa con la mejor explicación posible y, si hay apuntes disponibles en la base de datos, sugiérelos sin afirmar falta de acceso.
 
 Responde siempre en español de forma directa y útil.`;
 
@@ -127,7 +129,49 @@ Responde siempre en español de forma directa y útil.`;
         return await this.handleNotesInventoryQuery(intent, conversationContext, opts);
       }
 
-      // 9. Procesar documentos si es necesario
+      // 9. Paso proactivo: intentar ofrecer apuntes antes de generar respuesta larga (solo si intención académica / materia)
+      try {
+        const proactive = await this.shouldOfferDocuments(text, intent, conversationContext);
+        if (proactive.offer) {
+          const subjectLabel = proactive.subjectMatched || intent.subject || proactive.queryUsed || '';
+          const subjectName = subjectLabel ? subjectLabel.charAt(0).toUpperCase() + subjectLabel.slice(1) : '';
+          let answer = subjectName ? `He encontrado apuntes relacionados con ${subjectName}:\n\n` : `He encontrado estos apuntes:\n\n`;
+          proactive.docs.slice(0,5).forEach((d: any, i: number) => {
+            answer += `${i + 1}. ${d.title || d.subject || 'Documento'}${d.subject ? ` (${d.subject})` : ''}\n`;
+          });
+          answer += `\n¿Quieres que use alguno para ayudarte?`;
+
+          // Persistencia mínima si hay usuario
+          let finalConversationId = opts?.conversationId;
+          try {
+            if (opts?.userId) {
+              if (!finalConversationId) {
+                const title = opts?.title || this.generateTitleFromText(subjectLabel || text);
+                const conv = await this.createConversation(opts.userId, title);
+                finalConversationId = conv.id as unknown as string;
+              }
+              await this.addMessage(finalConversationId!, text, 'user');
+              await this.addMessage(finalConversationId!, answer, 'assistant');
+            }
+          } catch (persistErr) {
+            console.warn('⚠️ No se pudo persistir historial (proactive offer):', persistErr);
+          }
+
+          return {
+            answer,
+            conversationId: finalConversationId,
+            showRelated: true,
+            subjectQuery: subjectLabel || null,
+            relatedDocuments: proactive.docs.slice(0,5),
+            usedDocument: proactive.docs[0] || undefined,
+            autoLock: !!(proactive.docs && proactive.docs.length > 0)
+          };
+        }
+      } catch (e) {
+        console.warn('⚠️ Error en paso proactivo shouldOfferDocuments:', e);
+      }
+
+      // 10. Procesar documentos si es necesario
       let pdfContext = '';
       let allDocs: any[] = [];
       let documentsProcessed = 0;
@@ -139,7 +183,7 @@ Responde siempre en español de forma directa y útil.`;
         documentsProcessed = documentResult.processed;
       }
 
-      // 10. Generar respuesta inteligente con contexto
+      // 11. Generar respuesta inteligente con contexto
       const response = await this.generateIntelligentResponse(
         text, 
         intent, 
@@ -159,6 +203,184 @@ Responde siempre en español de forma directa y útil.`;
         answer: 'Lo siento, no pude procesar tu consulta en este momento. Por favor, intenta nuevamente.',
       };
     }
+  }
+
+  /**
+   * Streaming simplificado de respuesta: evita segunda llamada de análisis que introduce latencia.
+   * Usa fallbackIntentAnalysis para rapidez y genera respuesta del modelo con streaming token a token.
+   * onDelta se invoca con cada fragmento (token/parcial) recibido del modelo.
+   */
+  async streamReply(
+    text: string,
+    opts: { userId?: string; conversationId?: string; title?: string },
+    onDelta: (delta: string) => void
+  ): Promise<{ finalAnswer: string; conversationId?: string }> {
+    if (!this.openai) {
+      // Modo mock: emitir respuesta completa en un único delta
+      const mock = await this.getMockAcademicResponse(text);
+      onDelta(mock.answer || 'Respuesta mock.');
+      return { finalAnswer: mock.answer || 'Respuesta mock.' };
+    }
+
+    // Intento rápido (sin segunda llamada a OpenAI)
+    const intent = this.fallbackIntentAnalysis(text);
+    const conversationContext = await this.getConversationContext(opts?.conversationId);
+
+    // Construir prompt contextual mínimo (sin PDF pesado para rapidez)
+    const basePrompt = this.buildContextualPrompt(text, intent, conversationContext, '');
+
+    const model = this.configService.get<string>('app.openaiModel') || 'gpt-4o-mini';
+
+    let finalConversationId = opts?.conversationId;
+    try {
+      if (opts?.userId) {
+        if (!finalConversationId) {
+          const title = opts?.title || this.generateTitleFromText(text);
+          const conv = await this.createConversation(opts.userId, title);
+          finalConversationId = conv.id as unknown as string;
+        }
+        // Guardar mensaje de usuario inmediatamente
+        await this.addMessage(finalConversationId!, text, 'user');
+      }
+    } catch (persistErr) {
+      console.warn('⚠️ No se pudo persistir el mensaje de usuario (stream):', persistErr);
+    }
+
+    let fullAnswer = '';
+    try {
+      const stream = await this.openai.chat.completions.create({
+        model,
+        stream: true,
+        temperature: this.getOptimalTemperature(intent, conversationContext),
+        max_tokens: this.getOptimalMaxTokens(intent, conversationContext),
+        messages: [
+          { role: 'system', content: this.systemPrompt },
+          { role: 'user', content: basePrompt }
+        ],
+        top_p: 0.9
+      });
+
+      for await (const part of stream) {
+        const delta = part.choices?.[0]?.delta?.content;
+        if (delta) {
+          fullAnswer += delta;
+          onDelta(delta);
+        }
+      }
+    } catch (err) {
+      const msg = (err as any)?.message || 'Error en streaming.';
+      console.error('❌ Error streaming OpenAI:', msg);
+      onDelta('\n[Error en streaming: ' + msg + ']');
+    }
+
+    // Persistir respuesta completa
+    if (fullAnswer.trim()) {
+      try {
+        if (opts?.userId && finalConversationId) {
+          await this.addMessage(finalConversationId, fullAnswer, 'assistant');
+        }
+      } catch (persistErr) {
+        console.warn('⚠️ No se pudo persistir respuesta asistente (stream):', persistErr);
+      }
+    }
+
+    return { finalAnswer: fullAnswer, conversationId: finalConversationId };
+  }
+
+  /**
+   * Streaming con contexto de documento específico.
+   * Similar a streamReply pero agrega el contexto procesado del PDF (resumido) al prompt.
+   */
+  async streamReplyWithDocument(
+    text: string,
+    documentId: string,
+    opts: { userId?: string; conversationId?: string; title?: string },
+    onDelta: (delta: string) => void
+  ): Promise<{ finalAnswer: string; conversationId?: string }> {
+    if (!this.openai) {
+      const mock = await this.getMockAcademicResponse(text);
+      onDelta(mock.answer || 'Respuesta mock.');
+      return { finalAnswer: mock.answer || 'Respuesta mock.' };
+    }
+
+    // Intent rápido para metadatos
+    const intent = this.fallbackIntentAnalysis(text);
+    const conversationContext = await this.getConversationContext(opts?.conversationId);
+
+    // Recuperar documento
+    const doc = await this.docs.find(documentId);
+    let pdfContext = '';
+    if (doc?.file_url) {
+      try {
+        const filePath = doc.file_url;
+        // Para PDFs locales en /uploads
+        if (/\.pdf$/i.test(filePath)) {
+          const localPath = filePath.startsWith('/uploads/') ? filePath : filePath;
+          const extracted = await this.pdfProcessor.extractTextFromPdf(localPath);
+          // Limitar y resumir textual para prompt (primeros ~5000 chars)
+          pdfContext = extracted.slice(0, 5000);
+        }
+      } catch (e) {
+        console.warn('⚠️ No se pudo extraer contexto PDF:', e);
+      }
+    } else if (doc?.content) {
+      pdfContext = String(doc.content).slice(0, 5000);
+    }
+
+    const basePrompt = this.buildContextualPrompt(text, intent, conversationContext, pdfContext);
+    const model = this.configService.get<string>('app.openaiModel') || 'gpt-4o-mini';
+
+    let finalConversationId = opts?.conversationId;
+    try {
+      if (opts?.userId) {
+        if (!finalConversationId) {
+          const title = opts?.title || this.generateTitleFromText(text);
+          const conv = await this.createConversation(opts.userId, title);
+          finalConversationId = conv.id as unknown as string;
+        }
+        await this.addMessage(finalConversationId!, text, 'user');
+      }
+    } catch (persistErr) {
+      console.warn('⚠️ No se pudo persistir mensaje usuario (stream doc):', persistErr);
+    }
+
+    let fullAnswer = '';
+    try {
+      const stream = await this.openai.chat.completions.create({
+        model,
+        stream: true,
+        temperature: this.getOptimalTemperature(intent, conversationContext),
+        max_tokens: this.getOptimalMaxTokens(intent, conversationContext),
+        messages: [
+          { role: 'system', content: this.systemPrompt },
+          { role: 'user', content: basePrompt }
+        ],
+        top_p: 0.9
+      });
+      for await (const part of stream) {
+        const delta = part.choices?.[0]?.delta?.content;
+        if (delta) {
+          fullAnswer += delta;
+          onDelta(delta);
+        }
+      }
+    } catch (err) {
+      const msg = (err as any)?.message || 'Error en streaming con documento.';
+      console.error('❌ Error streaming doc OpenAI:', msg);
+      onDelta('\n[Error: ' + msg + ']');
+    }
+
+    if (fullAnswer.trim()) {
+      try {
+        if (opts?.userId && finalConversationId) {
+          await this.addMessage(finalConversationId, fullAnswer, 'assistant');
+        }
+      } catch (persistErr) {
+        console.warn('⚠️ No se pudo persistir respuesta asistente (stream doc):', persistErr);
+      }
+    }
+
+    return { finalAnswer: fullAnswer, conversationId: finalConversationId };
   }
 
   // Manejar solicitud específica de documento
@@ -263,12 +485,17 @@ Responde siempre en español de forma directa y útil.`;
         console.warn('⚠️ No se pudo persistir el historial (saludo con ayuda):', persistErr);
       }
 
+      // Elegir un documento por defecto para auto-bloqueo (lock) si hay
+      const picked = (Array.isArray(relevantDocs) && relevantDocs.length > 0) ? relevantDocs[0] : null;
+
       return {
         answer,
         conversationId: finalConversationId,
         showRelated: relevantDocs.length > 0,
         subjectQuery: intent.subject,
         relatedDocuments: relevantDocs,
+        usedDocument: picked || undefined,
+        autoLock: !!picked,
         isGreeting: true
       };
     } catch (error) {
@@ -757,7 +984,7 @@ Solicitud original: ${originalRequest}`
         top_p: 0.9
       });
 
-      const answer = completion.choices[0]?.message?.content || 'No se pudo generar una respuesta.';
+  let answer = completion.choices[0]?.message?.content || 'No se pudo generar una respuesta.';
 
     // Persistir historial
       let finalConversationId = opts?.conversationId;
@@ -778,19 +1005,30 @@ Solicitud original: ${originalRequest}`
     // Buscar apuntes relacionados si no se usaron documentos
     let relatedDocuments: any[] = [];
     let showRelated = false;
-    
+    let usedDocument: any | undefined = undefined;
+    let autoLock = false;
+    // Solo ofrecer si realmente encontramos documentos y evitar contradicciones con respuestas que niegan acceso.
     if (intent.type === 'subject_specific' && !pdfContext) {
       try {
         const searchQuery = intent.subject || intent.keywords[0];
         if (searchQuery) {
           const related = await this.docs.search(searchQuery);
-          relatedDocuments = Array.isArray(related) ? related.slice(0, 5) : [];
+          const filtered = Array.isArray(related) ? related.filter(r => !!r?.title) : [];
+          relatedDocuments = filtered.slice(0, 5);
           showRelated = relatedDocuments.length > 0;
+          if (showRelated) {
+            usedDocument = relatedDocuments[0];
+            autoLock = true;
+            // Si el modelo generó una negación de acceso, reemplazar esa parte por un encabezado neutro
+            if (/no tengo acceso a documentos/i.test(answer) || /no tengo acceso/i.test(answer)) {
+              answer = `He encontrado algunos apuntes relevantes sobre ${searchQuery}:\n` + relatedDocuments.map((d: any, i: number) => `${i + 1}. ${d.title}${d.subject ? ` (${d.subject})` : ''}`).join('\n') + `\n\n¿En qué aspecto específico necesitas ayuda?`;
+            }
+          }
         }
-        } catch (e) {
+      } catch (e) {
         console.warn('⚠️ Error buscando apuntes relacionados:', e);
-        }
       }
+    }
 
         return {
           answer,
@@ -798,8 +1036,69 @@ Solicitud original: ${originalRequest}`
       conversationId: finalConversationId,
       showRelated,
       subjectQuery: intent.subject || null,
-      relatedDocuments
+      relatedDocuments,
+      usedDocument,
+      autoLock
     };
+  }
+
+  // Aliases generados desde la malla curricular + algunos extras manuales
+  private subjectAliases: Record<string, string[]> = {
+    ...buildSubjectAliases(),
+    // extras globales y genéricos
+    'estadística': ['estadistica','probabilidad','estadistica descriptiva'],
+    'programación': ['programacion','codigo','desarrollo','algoritmos']
+  };
+
+  private normalizeSubjectCandidate(candidate?: string): string | undefined {
+    if (!candidate) return undefined;
+    const s = this.removeAccents(candidate.toLowerCase()).trim();
+    for (const [canon, aliases] of Object.entries(this.subjectAliases)) {
+      for (const a of aliases) {
+        if (s.includes(this.removeAccents(a))) return canon;
+      }
+    }
+    return candidate;
+  }
+
+  private async shouldOfferDocuments(
+    text: string,
+    intent: UserIntent,
+    conversationContext: ConversationContext
+  ): Promise<{ offer: boolean; docs: any[]; subjectMatched?: string; queryUsed?: string }> {
+    try {
+      // Prioridad: materia detectada
+      let subject = intent.subject ? this.normalizeSubjectCandidate(intent.subject) : undefined;
+      if (subject) {
+        const found = await this.docs.search(subject);
+        if (Array.isArray(found) && found.length > 0) {
+          return { offer: true, docs: found.slice(0, 8), subjectMatched: subject, queryUsed: subject };
+        }
+      }
+
+      // Si no hubo materia clara, probar con keywords
+      const keywords = intent.keywords && intent.keywords.length ? intent.keywords : this.extractKeywords(text);
+      if (keywords.length > 0) {
+        const q = keywords.slice(0, 2).join(' ');
+        const foundKw = await this.docs.search(q);
+        if (Array.isArray(foundKw) && foundKw.length > 0) {
+          return { offer: true, docs: foundKw.slice(0, 8), queryUsed: q };
+        }
+      }
+
+      // Señales explícitas de que quiere apuntes
+      const low = text.toLowerCase();
+      const docSignals = ['apunte','apuntes','pdf','documento','documentos','guia','guía','ejercicios','práctica','practica','control'];
+      if (docSignals.some(sig => low.includes(sig))) {
+        const recent = await this.docs.list(1, 12);
+        if (recent.items && recent.items.length > 0) {
+          return { offer: true, docs: recent.items.slice(0, 8), queryUsed: 'general' };
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ shouldOfferDocuments error:', e);
+    }
+    return { offer: false, docs: [] };
   }
 
   // Construir prompt contextual
@@ -1344,7 +1643,11 @@ Si solicita un quiz/examen, detecta el tipo y número de preguntas.`
     return answer;
   }
 
-  async queryWithDocument(text: string, documentId: string) {
+  async queryWithDocument(
+    text: string,
+    documentId: string,
+    opts?: { userId?: string; conversationId?: string; title?: string }
+  ) {
     // Si no hay OpenAI configurado → usar mock
     if (!this.openai) {
       console.warn('No OpenAI API key found, using mock response.');
@@ -1398,11 +1701,29 @@ Si solicita un quiz/examen, detecta el tipo y número de preguntas.`
 
       const answer = completion.choices[0]?.message?.content || 'No se pudo generar una respuesta.';
 
+      // Persistir historial si aplica
+      let finalConversationId = opts?.conversationId;
+      try {
+        if (opts?.userId) {
+          if (!finalConversationId) {
+            const title = opts?.title || this.generateTitleFromText(text);
+            const conv = await this.createConversation(opts.userId, title);
+            finalConversationId = conv.id as unknown as string;
+          }
+          await this.addMessage(finalConversationId!, text, 'user');
+          await this.addMessage(finalConversationId!, answer, 'assistant');
+        }
+      } catch (persistErr) {
+        console.warn('⚠️ No se pudo persistir el historial (query-with-document):', persistErr);
+      }
+
       return {
         answer,
         relatedDocuments: [doc],
+        usedDocument: doc,
         model: model,
-        usage: completion.usage
+        usage: completion.usage,
+        conversationId: finalConversationId
       };
     } catch (error: any) {
       const status = error?.status || error?.response?.status;

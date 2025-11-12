@@ -6,9 +6,11 @@ interface HeaderProps {
   onLogout?: () => void;
   onUploadClick?: () => void;
   onChatClick?: () => void;
+  onHomeClick?: () => void;
+  onCurriculumClick?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ userName, onLogout, onUploadClick, onChatClick }) => {
+const Header: React.FC<HeaderProps> = ({ userName, onLogout, onUploadClick, onChatClick, onHomeClick, onCurriculumClick }) => {
   return (
     <header className="bg-card border-b border-border px-4 py-3 shadow-lg">
       <div className="flex items-center justify-between">
@@ -24,12 +26,18 @@ const Header: React.FC<HeaderProps> = ({ userName, onLogout, onUploadClick, onCh
 
         {/* Navegación central */}
         <nav className="hidden md:flex items-center space-x-8">
-          <a href="#" className="text-foreground hover:text-primary transition-colors duration-200 font-medium">
+          <button
+            onClick={onHomeClick}
+            className="text-foreground hover:text-primary transition-colors duration-200 font-medium"
+          >
             Apuntes
-          </a>
-                 <a href="#malla" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors duration-200">
-                   Malla Curricular
-                 </a>
+          </button>
+          <button
+            onClick={onCurriculumClick}
+            className="text-muted-foreground hover:text-foreground transition-colors duration-200"
+          >
+            Malla Curricular
+          </button>
           <button onClick={onUploadClick} className="text-muted-foreground hover:text-foreground transition-colors duration-200">
             Subir Apunte
           </button>

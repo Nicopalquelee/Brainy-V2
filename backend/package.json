@@ -6,6 +6,7 @@
     "start": "ts-node -r tsconfig-paths/register src/main.ts",
     "start:dev": "nest start --watch",
     "build": "tsc -p tsconfig.build.json",
+    "start:prod": "node dist/main.js",
     "check:supabase": "ts-node -r tsconfig-paths/register scripts/check-supabase-admin.ts",
   "dev:register": "ts-node scripts/test-register.ts",
   "check:notes": "ts-node -r tsconfig-paths/register scripts/test-notes.ts",

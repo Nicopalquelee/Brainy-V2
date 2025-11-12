@@ -9,7 +9,7 @@ interface UploadApuntePageProps {
 
 const UploadApuntePage: React.FC<UploadApuntePageProps> = ({ onBack, onUploaded }) => {
   return (
-    <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
+    <div className="h-full flex flex-col bg-background overflow-hidden">
       {/* Header */}
       <div className="bg-card border-b border-border px-4 py-3 shadow-sm">
         <div className="flex items-center justify-between">

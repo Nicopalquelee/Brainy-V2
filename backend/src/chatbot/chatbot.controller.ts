@@ -1,4 +1,5 @@
-import { Body, Controller, Post, Param, Get, Delete, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Post, Param, Get, Delete, UseGuards, Req, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { ChatbotService } from './chatbot.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -26,14 +27,94 @@ export class ChatbotController {
     });
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('stream')
+  @ApiOperation({ summary: 'Enviar consulta al chatbot y recibir respuesta en streaming SSE (token incremental)' })
+  async stream(
+    @Body() body: { text: string; conversationId?: string; title?: string },
+    @Req() req: any,
+    @Res() res: Response
+  ) {
+    const userId = req?.user?.sub || req?.user?.userId;
+  // Preparar cabeceras SSE (y evitar buffering en proxies)
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    try {
+      // streamReply ahora nos devuelve conversationId definitivo
+      const result = await this.bot.streamReply(body.text, {
+        userId,
+        conversationId: body.conversationId,
+        title: body.title
+      }, (delta) => {
+        res.write(`data:${JSON.stringify({ delta })}\n\n`);
+        (res as any).flush?.();
+      });
+      // Enviar conversación id (solo una vez al final si no se envió antes)
+      res.write(`data:${JSON.stringify({ conversationId: result.conversationId })}\n\n`);
+      res.write(`data:${JSON.stringify({ done: true })}\n\n`);
+      (res as any).flush?.();
+    } catch (e: any) {
+      res.write(`data:${JSON.stringify({ error: 'stream_error', message: e?.message })}\n\n`);
+    } finally {
+      res.end();
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('query-with-document/:documentId')
   @ApiOperation({ summary: 'Enviar consulta con contexto de un documento específico' })
   @ApiParam({ name: 'documentId', description: 'ID del documento a usar como contexto' })
   async queryWithDocument(
     @Param('documentId') documentId: string,
-    @Body() body: { text: string }
+    @Body() body: { text: string; conversationId?: string; title?: string },
+    @Req() req: any
   ) {
-    return this.bot.queryWithDocument(body.text, documentId);
+    const userId = req?.user?.sub || req?.user?.userId;
+    return this.bot.queryWithDocument(body.text, documentId, {
+      userId,
+      conversationId: body.conversationId,
+      title: body.title
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('stream-with-document/:documentId')
+  @ApiOperation({ summary: 'Streaming SSE con contexto de documento específico' })
+  @ApiParam({ name: 'documentId', description: 'ID del documento a usar como contexto' })
+  async streamWithDocument(
+    @Param('documentId') documentId: string,
+    @Body() body: { text: string; conversationId?: string; title?: string },
+    @Req() req: any,
+    @Res() res: Response
+  ) {
+    const userId = req?.user?.sub || req?.user?.userId;
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    try {
+      const result = await this.bot.streamReplyWithDocument(body.text, documentId, {
+        userId,
+        conversationId: body.conversationId,
+        title: body.title
+      }, (delta) => {
+        res.write(`data:${JSON.stringify({ delta })}\n\n`);
+        (res as any).flush?.();
+      });
+      res.write(`data:${JSON.stringify({ conversationId: result.conversationId })}\n\n`);
+      res.write(`data:${JSON.stringify({ done: true })}\n\n`);
+      (res as any).flush?.();
+    } catch (e: any) {
+      res.write(`data:${JSON.stringify({ error: 'stream_error', message: e?.message })}\n\n`);
+    } finally {
+      res.end();
+    }
   }
 
   @Post('analyze-documents')

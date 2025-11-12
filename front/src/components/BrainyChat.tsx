@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, ArrowLeft, Loader2, Volume2, VolumeX, Trash2 } from 'lucide-react';
-import { fetchJson } from '../lib/api';
+import { fetchJson, getApiBase, absoluteFromContentUrl } from '../lib/api';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
@@ -16,14 +16,7 @@ interface BrainyChatProps {
 }
 
 const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: '¡Hola! Soy Brainy, tu asistente académico especializado en ayudarte con tus asignaturas universitarias. Puedo ayudarte con explicaciones de conceptos, resolución de problemas, métodos de estudio y más. ¿En qué materia necesitas ayuda hoy?',
-      isUser: false,
-      timestamp: new Date()
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [soundsEnabled, setSoundsEnabled] = useState(true);
@@ -35,11 +28,28 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  // Related document suggestions (currently cleared for streaming mode; may be repopulated later)
   const [relatedDocs, setRelatedDocs] = useState<any[] | null>(null);
   const [relatedSubject, setRelatedSubject] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastUserMessageRef = useRef<string>('');
   const [activeDocument, setActiveDocument] = useState<{ id: string; title?: string; subject?: string } | null>(null);
+  // Landing prompts (first interaction)
+  const landingPrompts = [
+    '¿Cómo te puedo ayudar?',
+    '¿Qué toca hoy?',
+    '¿Qué deseas estudiar?',
+    'Explícame un concepto…',
+    'Prepárame un quiz de…',
+  ];
+  const [promptIndex, setPromptIndex] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setPromptIndex((p) => (p + 1) % landingPrompts.length);
+    }, 3000);
+    return () => clearInterval(id);
+  }, []);
+  const showLanding = messages.length === 0;
 
   // Funciones para reproducir sonidos
   const playSendSound = () => {
@@ -189,8 +199,8 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
       await fetchJson(`/chat/conversations/${id}`, { method: 'DELETE', token });
       if (conversationId === id) {
         setConversationId(undefined);
-        // Reset messages to greeting
-        setMessages([{ id: '1', text: messages[0]?.text || '¿En qué materia necesitas ayuda hoy?', isUser: false, timestamp: new Date() }]);
+        // Reset to landing (no initial assistant message)
+        setMessages([]);
       }
       loadConversations();
     } catch (e) {
@@ -201,15 +211,19 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
   // Nuevo chat: limpia mensajes y conversationId
   const startNewChat = () => {
     setConversationId(undefined);
-    setMessages([
-      {
-        id: '1',
-        text: '¡Hola! Soy Brainy, tu asistente académico especializado en ayudarte con tus asignaturas universitarias. Puedo ayudarte con explicaciones de conceptos, resolución de problemas, métodos de estudio y más. ¿En qué materia necesitas ayuda hoy?',
-        isUser: false,
-        timestamp: new Date()
-      }
-    ]);
+    setMessages([]);
     inputRef.current?.focus();
+  };
+
+  const mentionsSubject = (text: string) => {
+    const s = text.toLowerCase();
+    const patterns = [
+      /ayuda\s*(en|con)\s+.+/i,
+      /materia\s*(de|:)\s+.+/i,
+      /ramo\s*(de|:)\s+.+/i,
+      /(matematica|cálculo|calculo|algebra|estadistica|probabilidad|fisica|quimica|programacion|python|java|discreta|termodinamica)/i
+    ];
+    return patterns.some((p) => p.test(s));
   };
 
   const handleSendMessage = async () => {
@@ -231,69 +245,194 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
     playSendSound();
 
     try {
-      // Si hay un documento activo, usar el endpoint query-with-document
-      const endpoint = activeDocument
-        ? `/chat/query-with-document/${activeDocument.id}`
-        : '/chat/query';
-      const body: any = activeDocument
-        ? { text: userMessage.text, conversationId }
-        : { text: userMessage.text, conversationId };
+      // Si hay un documento activo y queremos usarlo, seguimos con el endpoint normal (no-stream) por ahora
+      // Si hay documento activo, seguimos flujo no-stream con ese documento
+      if (activeDocument) {
+        // Streaming con documento
+        const base = getApiBase();
+        const url = `${base.replace(/\/$/, '')}/chat/stream-with-document/${activeDocument.id}`;
+        const controller = new AbortController();
+        (window as any).__brainyAbort = controller;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ text: userMessage.text, conversationId }),
+          signal: controller.signal
+        } as RequestInit);
 
-      const data = await fetchJson<any>(endpoint, {
-        method: 'POST',
-        token: token || undefined,
-        body
-      });
-      
-      // Extract the actual message content from the response
-      let botText = '';
-      console.log('Response data:', data); // Debug log
-      
-      if (data.answer) {
-        botText = data.answer;
-        // NOTE: intentionally do not append model attribution or proactively list related documents.
-        // If the backend returns relatedDocuments and you want to show them, the backend should include
-        // an explicit flag (e.g. showRelated: true) and the frontend can render them separately.
-        if (data.showRelated && Array.isArray(data.relatedDocuments)) {
-          setRelatedDocs(data.relatedDocuments);
-          setRelatedSubject(data.subjectQuery || null);
-        } else {
-          setRelatedDocs(null);
-          setRelatedSubject(null);
+        if (!res.body) {
+          throw new Error('Streaming no soportado para documento.');
         }
-        // Si el backend confirma qué documento se usó, podemos fijarlo o actualizar el título
-        if (!activeDocument && data.usedDocument) {
-          setActiveDocument({ id: String(data.usedDocument.id), title: data.usedDocument.title, subject: data.usedDocument.subject });
+
+        const assistantId = (Date.now() + 1).toString();
+        setMessages(prev => [...prev, { id: assistantId, text: '', isUser: false, timestamp: new Date() }]);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let cancelled = false;
+        while (!cancelled) {
+          const { value, done } = await reader.read().catch(err => {
+            if (err.name === 'AbortError') {
+              cancelled = true;
+              return { value: undefined, done: true };
+            }
+            throw err;
+          });
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+          let processed = true;
+          while (processed) {
+            processed = false;
+            const normalized = buffer.replace(/\r\n/g, '\n');
+            const idx = normalized.indexOf('\n\n');
+            if (idx >= 0) {
+              const evt = normalized.slice(0, idx);
+              buffer = normalized.slice(idx + 2);
+              processed = true;
+              if (!evt.startsWith('data:')) continue;
+              const json = evt.slice(5).trim();
+              if (!json) continue;
+              try {
+                const payload = JSON.parse(json);
+                if (payload.delta) {
+                  setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, text: (m.text + payload.delta) } : m));
+                } else if (payload.conversationId) {
+                  if (!conversationId) {
+                    setConversationId(payload.conversationId);
+                    loadConversations();
+                  }
+                } else if (payload.done) {
+                  // fin
+                } else if (payload.error) {
+                  setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, text: 'Error en el stream: ' + (payload.message || 'desconocido') } : m));
+                }
+              } catch {}
+            } else {
+              buffer = normalized;
+            }
+          }
         }
-      } else if (data.response) {
-        botText = data.response;
-      } else if (data.error) {
-        botText = data.error;
-      } else if (typeof data === 'string') {
-        botText = data;
+        playReceiveSound();
+        loadConversations();
       } else {
-        botText = 'No se pudo obtener una respuesta del asistente.';
-        console.error('Unexpected response format:', data);
-      }
+        // limpiar sugerencias relacionadas en modo streaming
+        setRelatedDocs(null);
+        setRelatedSubject(null);
+        // Paralelamente, si detectamos materia, buscamos sugerencias para mostrarlas mientras llega el stream
+        if (mentionsSubject(userMessage.text)) {
+          const q = userMessage.text;
+          fetchJson<any>(`/chat/query`, {
+            method: 'POST',
+            token: token || undefined,
+            body: { text: userMessage.text, conversationId }
+          }).then((data) => {
+            if (data && data.showRelated && Array.isArray(data.relatedDocuments)) {
+              setRelatedDocs(data.relatedDocuments);
+              setRelatedSubject(data.subjectQuery || q);
+              if (data.autoLock && data.usedDocument) {
+                setActiveDocument({
+                  id: String(data.usedDocument.id),
+                  title: data.usedDocument.title,
+                  subject: data.usedDocument.subject,
+                  ...(data.usedDocument.file_url ? { file_url: data.usedDocument.file_url } : {}),
+                  ...(data.usedDocument.contentUrl ? { contentUrl: data.usedDocument.contentUrl } : {}),
+                  ...(data.usedDocument.path ? { path: data.usedDocument.path } : {})
+                } as any);
+              }
+              if (data.conversationId && !conversationId) {
+                setConversationId(data.conversationId);
+                loadConversations();
+              }
+            }
+          }).catch(() => {/* silencioso */});
+        }
+        
+        // Streaming SSE para consultas generales
+        const base = getApiBase();
+        const url = `${base.replace(/\/$/, '')}/chat/stream`;
+        const controller = new AbortController();
+        // Guardar para posibles cancelaciones
+        (window as any).__brainyAbort = controller;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ text: userMessage.text, conversationId }),
+          signal: controller.signal
+        } as RequestInit);
 
-      const botMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: botText,
-        isUser: false,
-        timestamp: new Date()
-      };
+        if (!res.body) {
+          throw new Error('Streaming no soportado por el navegador/servidor.');
+        }
 
-  setMessages(prev => [...prev, botMessage]);
+        // Crear mensaje del asistente “en construcción”
+  const assistantId = (Date.now() + 1).toString();
+  setMessages(prev => [...prev, { id: assistantId, text: '', isUser: false, timestamp: new Date() }]);
 
-      // Guardar conversationId si el backend lo devuelve
-      if (data.conversationId && !conversationId) {
-        setConversationId(data.conversationId);
-        // recargar lista de conversaciones
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+        let cancelled = false;
+        while (!cancelled) {
+          const { value, done } = await reader.read().catch(err => {
+            if (err.name === 'AbortError') {
+              cancelled = true;
+              return { value: undefined, done: true };
+            }
+            throw err;
+          });
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+
+          // Normalizar fin de línea para manejar CRLF y LF
+          let processed = true;
+          while (processed) {
+            processed = false;
+            // Unificar CRLF a LF para buscar delimitador consistente
+            const normalized = buffer.replace(/\r\n/g, '\n');
+            const idx = normalized.indexOf('\n\n');
+            if (idx >= 0) {
+              const evt = normalized.slice(0, idx);
+              buffer = normalized.slice(idx + 2);
+              processed = true;
+              if (!evt.startsWith('data:')) continue;
+              const json = evt.slice(5).trim();
+              if (!json) continue;
+              try {
+                const payload = JSON.parse(json);
+                if (payload.delta) {
+                  setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, text: (m.text + payload.delta) } : m));
+                } else if (payload.conversationId) {
+                  if (!conversationId) {
+                    setConversationId(payload.conversationId);
+                    loadConversations();
+                  }
+                } else if (payload.done) {
+                  // finalización normal
+                } else if (payload.error) {
+                  setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, text: 'Error en el stream: ' + (payload.message || 'desconocido') } : m));
+                }
+              } catch {}
+            } else {
+              // No encontramos un evento completo aún; esperar más datos
+              buffer = normalized;
+            }
+          }
+        }
+
+        // Sonido al terminar
+        playReceiveSound();
+        // Actualizar lista de conversaciones (el backend persistió mensajes)
         loadConversations();
       }
-      
-      // Reproducir sonido de recepción
-      playReceiveSound();
     } catch (error) {
       console.error('Error sending message:', error);
       const errorMessage: Message = {
@@ -368,7 +507,7 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
   };
 
   return (
-  <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
+  <div className="h-full flex flex-col bg-background overflow-hidden">
       {/* Header */}
       <div className="bg-card border-b border-border px-4 py-3 shadow-sm">
         <div className="flex items-center justify-between">
@@ -405,8 +544,8 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
         </div>
       </div>
 
-      {/* Content area: left sidebar + chat */}
-  <div className="flex-1 flex min-h-0 overflow-hidden">
+    {/* Content area: left sidebar + chat */}
+  <div className="flex-1 flex min-h-0">
         {/* Left sidebar: Conversations */}
         <aside className="w-80 border-r border-border bg-card flex flex-col">
           <div className="px-4 py-3 border-b border-border flex items-center justify-between">
@@ -462,89 +601,127 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
           )}
         </aside>
 
-        {/* Chat column */}
-  <div className="flex-1 flex flex-col min-h-0">
+        {/* Chat + Preview columns */}
+  <div className="flex-1 flex min-h-0">
+          {/* Chat column */}
+          <div className="flex-1 flex flex-col min-h-0">
           {/* Messages Area */}
           <div
-            className="flex-1 overflow-y-auto px-4 py-6 custom-scrollbar"
+            className="flex-1 overflow-y-auto px-6 md:px-8 py-6 custom-scrollbar"
             ref={messagesContainerRef}
             onScroll={handleMessagesScroll}
           >
-            <div className="max-w-4xl mx-auto space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`flex items-start space-x-3 max-w-[80%] ${
-                      message.isUser ? 'flex-row-reverse space-x-reverse' : ''
-                    }`}
-                  >
-                    {/* Avatar */}
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        message.isUser
-                          ? 'bg-gradient-to-br from-blue-500 to-blue-600'
-                          : 'bg-gradient-to-br from-purple-500 to-blue-600'
-                      }`}
-                    >
-                      {message.isUser ? (
-                        <User className="w-4 h-4 text-white" />
-                      ) : (
-                        <Bot className="w-4 h-4 text-white" />
-                      )}
-                    </div>
-
-                    {/* Message Bubble */}
-                    <div
-                      className={`px-4 py-3 rounded-2xl ${
-                        message.isUser
-                          ? 'bg-primary text-white rounded-br-md'
-                          : 'bg-card border border-border text-foreground rounded-bl-md'
-                      }`}
-                    >
-                      <p 
-                        className="text-sm leading-relaxed" 
-                        dangerouslySetInnerHTML={{ __html: formatMessage(message.text) }}
+            <div className="max-w-4xl mx-auto h-full">
+              {showLanding ? (
+                <div className="h-full flex items-center justify-center">
+                  <div className="w-full max-w-3xl mx-auto p-6 md:p-10 bg-card border border-border rounded-2xl shadow-sm text-center">
+                    <h2 className="text-3xl md:text-5xl font-bold text-foreground mb-6">
+                      {landingPrompts[promptIndex]}
+                    </h2>
+                    <div className="w-full max-w-2xl mx-auto">
+                      <input
+                        ref={inputRef}
+                        autoFocus
+                        type="text"
+                        value={inputText}
+                        onChange={(e) => setInputText(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Escribe tu pregunta aquí…"
+                        className="w-full px-5 py-4 bg-input border border-border rounded-2xl text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base md:text-lg"
                       />
-                      <p
-                        className={`text-xs mt-1 ${
-                          message.isUser ? 'text-blue-100' : 'text-muted-foreground'
-                        }`}
-                      >
-                        {message.timestamp.toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {/* Loading Indicator */}
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="flex items-start space-x-3">
-                    <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full flex items-center justify-center">
-                      <Bot className="w-4 h-4 text-white" />
-                    </div>
-                    <div className="bg-card border border-border px-4 py-3 rounded-2xl rounded-bl-md">
-                      <div className="flex items-center space-x-2">
-                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">Brainy está pensando...</span>
+                      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                        {['Explícame derivadas', 'Prepara un quiz de física', 'Resuelve este ejercicio…'].map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => { setInputText(s); setTimeout(() => inputRef.current?.focus(), 0); }}
+                            className="px-3 py-1.5 text-sm rounded-full bg-accent/50 border border-border hover:bg-accent"
+                          >
+                            {s}
+                          </button>
+                        ))}
                       </div>
                     </div>
                   </div>
                 </div>
-              )}
+              ) : (
+                <div className="space-y-4">
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`flex items-start space-x-3 max-w-[80%] ${
+                          message.isUser ? 'flex-row-reverse space-x-reverse' : ''
+                        }`}
+                      >
+                        {/* Avatar */}
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            message.isUser
+                              ? 'bg-gradient-to-br from-blue-500 to-blue-600'
+                              : 'bg-gradient-to-br from-purple-500 to-blue-600'
+                          }`}
+                        >
+                          {message.isUser ? (
+                            <User className="w-4 h-4 text-white" />
+                          ) : (
+                            <Bot className="w-4 h-4 text-white" />
+                          )}
+                        </div>
 
-              <div ref={messagesEndRef} />
+                        {/* Message Bubble */}
+                        <div
+                          className={`px-4 py-3 rounded-2xl ${
+                            message.isUser
+                              ? 'bg-primary text-white rounded-br-md'
+                              : 'bg-card border border-border text-foreground rounded-bl-md'
+                          }`}
+                        >
+                          <p 
+                            className="text-sm leading-relaxed" 
+                            dangerouslySetInnerHTML={{ __html: formatMessage(message.text) }}
+                          />
+                          <p
+                            className={`text-xs mt-1 ${
+                              message.isUser ? 'text-blue-100' : 'text-muted-foreground'
+                            }`}
+                          >
+                            {message.timestamp.toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Loading Indicator */}
+                  {isLoading && (
+                    <div className="flex justify-start">
+                      <div className="flex items-start space-x-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full flex items-center justify-center">
+                          <Bot className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="bg-card border border-border px-4 py-3 rounded-2xl rounded-bl-md">
+                          <div className="flex items-center space-x-2">
+                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">Brainy está pensando...</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Input Area */}
+          {/* Input Area (hidden on landing) */}
+          {!showLanding && (
           <div className="bg-card border-t border-border px-4 py-4">
             <div className="max-w-4xl mx-auto">
               {/* Documento activo (modo pegajoso) */}
@@ -579,15 +756,14 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
                         onClick={async (e) => {
                           e.preventDefault();
                           if (isLoading) return;
+                          setIsLoading(true);
+                          playSendSound();
+                          const question = lastUserMessageRef.current || 'Responde usando este apunte.';
                           try {
-                            setIsLoading(true);
-                            playSendSound();
-                            // Usar la última pregunta del usuario si existe, o un prompt por defecto
-                            const question = lastUserMessageRef.current || 'Responde usando este apunte.';
                             const data = await fetchJson<any>(`/chat/query-with-document/${d.id}`, {
                               method: 'POST',
                               token: token || undefined,
-                              body: { text: question }
+                              body: { text: question, conversationId }
                             });
                             const botText = data?.answer || data?.response || data?.error || 'No se pudo obtener una respuesta.';
                             const botMessage: Message = {
@@ -597,8 +773,19 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
                               timestamp: new Date()
                             };
                             setMessages(prev => [...prev, botMessage]);
-                            // Fijar documento activo para próximas preguntas
-                            setActiveDocument({ id: String(d.id), title: d.title, subject: d.subject });
+                            // Conserva posibles URLs si vienen en el elemento relacionado
+                            setActiveDocument({
+                              id: String(d.id),
+                              title: d.title,
+                              subject: d.subject,
+                              ...(d.file_url ? { file_url: d.file_url } : {}),
+                              ...(d.contentUrl ? { contentUrl: d.contentUrl } : {}),
+                              ...(d.path ? { path: d.path } : {})
+                            } as any);
+                            if (data.conversationId && !conversationId) {
+                              setConversationId(data.conversationId);
+                              loadConversations();
+                            }
                             playReceiveSound();
                           } catch (err) {
                             const errorMessage: Message = {
@@ -649,12 +836,56 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
                     <Send className="w-5 h-5" />
                   )}
                 </button>
+                {isLoading && !activeDocument && (
+                  <button
+                    onClick={() => {
+                      try {
+                        (window as any).__brainyAbort?.abort();
+                      } catch {}
+                    }}
+                    className="p-3 bg-destructive text-white rounded-2xl hover:bg-destructive/90 transition-all duration-200"
+                    title="Cancelar respuesta"
+                  >
+                    Cancelar
+                  </button>
+                )}
               </div>
             </div>
           </div>
+          )}
+
+          {/* Close Chat column wrapper */}
+          </div>
+
+          {/* Preview column */}
+          {activeDocument && (
+            <aside className="hidden lg:block w-[38%] border-l border-border bg-background">
+              <div className="h-full flex flex-col">
+                <div className="px-3 py-2 border-b border-border text-sm text-muted-foreground">
+                  Previsualización: <span className="text-foreground font-medium truncate inline-block max-w-[60%]" title={activeDocument.title || ''}>{activeDocument.title || 'Apunte'}</span>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  {(() => {
+                    const url = absoluteFromContentUrl((activeDocument as any).file_url || (activeDocument as any).contentUrl || (activeDocument as any).path);
+                    if (!url) {
+                      return <div className="p-4 text-sm text-muted-foreground">No se pudo cargar la vista previa del PDF.</div>;
+                    }
+                    return (
+                      <iframe
+                        key={String(activeDocument.id)}
+                        src={url}
+                        className="w-full h-full"
+                        title={activeDocument.title || 'Previsualización'}
+                      />
+                    );
+                  })()}
+                </div>
+              </div>
+            </aside>
+          )}
         </div>
 
-        {/* (removed right sidebar) */}
+        {/* (right sidebar now used for PDF preview when activeDocument) */}
       </div>
     </div>
   );
