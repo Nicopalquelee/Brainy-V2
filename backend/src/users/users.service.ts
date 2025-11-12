@@ -7,10 +7,10 @@ export class UsersService {
   async create(dto: CreateUserDto): Promise<Profile> {
     // En Supabase, los usuarios se crean a través de Auth
     // Este método se usa principalmente para actualizar perfiles después del registro
-  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email: dto.email,
       password: dto.password,
-      email_confirm: true,
+      email_confirm: true, // Saltamos la verificación de email
       user_metadata: {
         username: dto.username,
         full_name: dto.name,

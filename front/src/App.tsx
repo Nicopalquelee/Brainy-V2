@@ -52,6 +52,7 @@ function App() {
       return (
         <RegisterForm 
           onBack={() => setShowRegister(false)}
+          onRegisterSuccess={handleLogin}
         />
       );
     }

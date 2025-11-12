@@ -20,7 +20,19 @@ export class AuthController {
         return { error: 'Debe usar correo institucional (@correo.uss.cl)' };
       }
       const user = await this.usersService.create(dto);
-      return { id: (user as any).id, email: (user as any).email };
+      
+      // Auto-login después del registro exitoso
+      const loginResult = await this.authService.login({
+        id: (user as any).id,
+        email: (user as any).email,
+        role: (user as any).role || 'student'
+      });
+      
+      return {
+        id: (user as any).id,
+        email: (user as any).email,
+        accessToken: loginResult.accessToken
+      };
     } catch (e: any) {
       // Surface a friendly error to the frontend instead of 500
       const msg = e?.message || 'No se pudo registrar el usuario';

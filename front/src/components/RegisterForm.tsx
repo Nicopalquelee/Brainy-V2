@@ -4,9 +4,10 @@ import { auth } from '../lib/supabase';
 
 interface RegisterFormProps {
   onBack: () => void;
+  onRegisterSuccess?: (token: string) => void;
 }
 
-const RegisterForm: React.FC<RegisterFormProps> = ({ onBack }) => {
+const RegisterForm: React.FC<RegisterFormProps> = ({ onBack, onRegisterSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -31,18 +32,32 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onBack }) => {
     }
 
     try {
-      const redirect = `${window.location.origin}/auth/callback`;
-      const { error: signUpError } = await auth.signUp(
-        email,
-        password,
-        { full_name: name },
-        redirect
-      );
-      if (signUpError) {
-        setError(signUpError.message || 'No se pudo completar el registro.');
+      // Registro usando el backend custom que auto-logea
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password,
+          name,
+          username: email.split('@')[0] // usar parte antes del @
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.error) {
+        setError(data.error);
         return;
       }
-      // Mostrar pantalla de confirmación de email
+
+      // Si viene accessToken, auto-login inmediato
+      if (data.accessToken && onRegisterSuccess) {
+        onRegisterSuccess(data.accessToken);
+        return;
+      }
+
+      // Fallback: mostrar confirmación
       setSuccess(true);
     } catch (err: any) {
       setError(err?.message || 'Error al registrar el usuario. Por favor, intenta nuevamente.');
