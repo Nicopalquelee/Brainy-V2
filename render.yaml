@@ -5,12 +5,12 @@ services:
     plan: starter
     branch: main
     rootDir: backend
-    buildCommand: npm ci && npm run build
-    startCommand: npm run start:prod
+    buildCommand: "npm ci && npm run build"
+    startCommand: "npm run start:prod"
     autoDeploy: true
     envVars:
       - key: NODE_ENV
-        value: production
+        value: "production"
       - key: SUPABASE_URL
         fromSecret: SUPABASE_URL
       - key: SUPABASE_ANON_KEY
@@ -30,11 +30,11 @@ services:
     plan: starter
     branch: main
     rootDir: front
-    buildCommand: npm ci && npm run build
-    startCommand: npm run preview
+    buildCommand: "npm ci && npm run build"
+    startCommand: "npm run preview"
     autoDeploy: true
     envVars:
       - key: NODE_ENV
-        value: production
+        value: "production"
       - key: VITE_API_URL
         fromSecret: BACKEND_API_URL
