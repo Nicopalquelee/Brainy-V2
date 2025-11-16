@@ -12,17 +12,17 @@ services:
       - key: NODE_ENV
         value: production
       - key: SUPABASE_URL
-        value: ${SUPABASE_URL}
+        fromSecret: SUPABASE_URL
       - key: SUPABASE_ANON_KEY
-        value: ${SUPABASE_ANON_KEY}
+        fromSecret: SUPABASE_ANON_KEY
       - key: SUPABASE_SERVICE_ROLE_KEY
-        value: ${SUPABASE_SERVICE_ROLE_KEY}
+        fromSecret: SUPABASE_SERVICE_ROLE_KEY
       - key: DATABASE_URL
-        value: ${DATABASE_URL}
+        fromSecret: DATABASE_URL
       - key: JWT_SECRET
-        value: ${JWT_SECRET}
+        fromSecret: JWT_SECRET
       - key: OPENAI_API_KEY
-        value: ${OPENAI_API_KEY}
+        fromSecret: OPENAI_API_KEY
 
   - type: web
     name: brainy-frontend
@@ -37,7 +37,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: VITE_API_URL
-        value: ${BACKEND_API_URL}
+        fromSecret: BACKEND_API_URL
 
 # Render.yaml Configuration Notes
 # =================================
