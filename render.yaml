@@ -4,13 +4,18 @@
 # Customize secrets/env vars via Render dashboard (this file references secrets by name)
 
 services:
-  - type: static_site
+  - type: web_service
     name: brainy-frontend
+    env: node
+    plan: starter
     branch: main
     root: front
     buildCommand: npm ci && npm run build
-    publishPath: dist
+    startCommand: npm run preview
     autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
 
   - type: web_service
     name: brainy-backend
@@ -36,9 +41,9 @@ services:
 # Notes:
 # - After you import this repo into Render, go to the service settings and add the referenced secrets
 #   (SUPABASE_*, DATABASE_URL) through the Render dashboard Secrets UI.
+# - Both frontend and backend are configured as web_service (Node environment) for simplicity.
+# - Frontend uses `npm run preview` to serve the Vite dist build after compilation.
+# - Backend runs `npm run start:prod` which executes the compiled NestJS app from dist/.
 # - If your backend requires additional environment variables (JWT secrets, API keys, etc.),
 #   add them under the backend's `envVars` section and configure them as Render secrets.
-# - The `plan: starter` for backend is a minimal instance; choose a different `plan` if you
-#   need more CPU/memory.
-# - If you prefer to run the frontend as a Node web service instead of a static site, change
-#   the first service to `type: web_service` and set appropriate `startCommand`.
+# - The `plan: starter` is a minimal instance; choose a different `plan` if you need more CPU/memory.
