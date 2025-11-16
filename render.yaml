@@ -1,30 +1,30 @@
 services:
   - type: web
-  name: brainy-backend
-  runtime: node
-  plan: starter
-  branch: main
-  rootDir: backend
-  buildCommand: "npm ci && npm run build"
-  startCommand: "npm run start:prod"
-  autoDeploy: true
-  envVars:
-    - key: NODE_ENV
-    value: "production"
-    - key: SUPABASE_URL
-    fromSecret: SUPABASE_URL
-    - key: SUPABASE_ANON_KEY
-    fromSecret: SUPABASE_ANON_KEY
-    - key: SUPABASE_SERVICE_ROLE_KEY
-    fromSecret: SUPABASE_SERVICE_ROLE_KEY
-    - key: DATABASE_URL
-    fromSecret: DATABASE_URL
-    - key: JWT_SECRET
-    fromSecret: JWT_SECRET
-    - key: OPENAI_API_KEY
-    fromSecret: OPENAI_API_KEY
-    
-    - type: web
+    name: brainy-backend
+    runtime: node
+    plan: starter
+    branch: main
+    rootDir: backend
+    buildCommand: "npm ci && npm run build"
+    startCommand: "npm run start:prod"
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: "production"
+      - key: SUPABASE_URL
+        fromSecret: SUPABASE_URL
+      - key: SUPABASE_ANON_KEY
+        fromSecret: SUPABASE_ANON_KEY
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromSecret: SUPABASE_SERVICE_ROLE_KEY
+      - key: DATABASE_URL
+        fromSecret: DATABASE_URL
+      - key: JWT_SECRET
+        fromSecret: JWT_SECRET
+      - key: OPENAI_API_KEY
+        fromSecret: OPENAI_API_KEY
+
+  - type: web
     name: brainy-frontend
     runtime: node
     plan: starter
@@ -35,7 +35,6 @@ services:
     autoDeploy: true
     envVars:
       - key: NODE_ENV
-      value: "production"
+        value: "production"
       - key: VITE_API_URL
-      fromSecret: BACKEND_API_URL
-      
+        fromSecret: BACKEND_API_URL
