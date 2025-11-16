@@ -24,37 +24,53 @@ services:
       - key: OPENAI_API_KEY
         fromSecret: OPENAI_API_KEY
 
-  - type: static_site
+  - type: web
     name: brainy-frontend
+    runtime: node
+    plan: starter
     branch: main
     rootDir: front
     buildCommand: npm ci && npm run build
-    staticPublishPath: dist
+    startCommand: npm run preview
     autoDeploy: true
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: VITE_API_URL
-        value: https://brainy-backend.onrender.com
+        fromSecret: BACKEND_API_URL
 
 # Render.yaml Configuration Notes
 # =================================
-# Backend (type: web):
+# Both services use type: web (only fully supported type in Render)
+#
+# Backend Service (brainy-backend):
 #   - Runtime: Node.js
 #   - Runs `npm run build` to compile TypeScript → dist/
 #   - Starts with `npm run start:prod` (executes dist/main.js)
-#   - Plan: starter (minimal resources; upgrade as needed)
+#   - Plan: starter (minimal resources; upgrade to standard or pro as needed)
 #
-# Frontend (type: static_site):
+# Frontend Service (brainy-frontend):
+#   - Runtime: Node.js
 #   - Builds with `npm run build` (Vite compiles React → dist/)
-#   - Publishes contents of `dist/` as static files
-#   - Sets VITE_API_URL to backend URL for API calls
+#   - Starts with `npm run preview` (Vite's preview server)
+#   - VITE_API_URL points to backend via BACKEND_API_URL secret
 #
-# Secrets to configure in Render Dashboard:
-#   - SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY (from Supabase)
-#   - DATABASE_URL (Postgres connection string if using external DB)
-#   - JWT_SECRET (for auth tokens; generate a strong random string)
-#   - OPENAI_API_KEY (for ChatGPT integration)
+# Secrets to configure in Render Dashboard (per service):
 #
-# After importing this repo into Render:
-#   1. Go to Dashboard → Settings
-#   2. Add Environment → add each secret listed above
-#   3. Services will auto-deploy when you push to main
+# Backend Secrets:
+#   - SUPABASE_URL (from Supabase project settings)
+#   - SUPABASE_ANON_KEY (Supabase public key)
+#   - SUPABASE_SERVICE_ROLE_KEY (Supabase service role key - KEEP PRIVATE)
+#   - DATABASE_URL (PostgreSQL connection string, if external DB)
+#   - JWT_SECRET (generate with: openssl rand -hex 32)
+#   - OPENAI_API_KEY (from OpenAI dashboard)
+#
+# Frontend Secrets:
+#   - BACKEND_API_URL (set to your backend URL, e.g. https://brainy-backend.onrender.com)
+#
+# After importing this repo into Render Dashboard:
+#   1. Connect GitHub account and select Brainy-V2 repo
+#   2. Render auto-detects render.yaml and creates services
+#   3. For each service, go to Settings → Environment
+#   4. Add all required secrets listed above
+#   5. Services will auto-deploy when you push changes to main branch
