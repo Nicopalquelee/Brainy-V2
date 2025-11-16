@@ -21,7 +21,7 @@ Object.defineProperty(window, 'localStorage', {
 describe('App Component', () => {
   it('renders without crashing', () => {
     render(<App />)
-    expect(screen.getByText('AcadUSS')).toBeInTheDocument()
+  expect(screen.getByText('Brainy USS')).toBeInTheDocument()
   })
 
   it('shows login form when not authenticated', () => {

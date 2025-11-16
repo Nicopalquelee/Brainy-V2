@@ -1,0 +1,44 @@
+# Render YAML for Brainy-V2
+# - Frontend: Vite React app in `front/` (built and published as static site)
+# - Backend: NestJS Node app in `backend/` (TypeScript build then run)
+# Customize secrets/env vars via Render dashboard (this file references secrets by name)
+
+services:
+  - type: static_site
+    name: brainy-frontend
+    branch: main
+    root: front
+    buildCommand: npm ci && npm run build
+    publishPath: dist
+    autoDeploy: true
+
+  - type: web_service
+    name: brainy-backend
+    env: node
+    plan: starter
+    branch: main
+    root: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:prod
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        fromSecret: SUPABASE_URL
+      - key: SUPABASE_ANON_KEY
+        fromSecret: SUPABASE_ANON_KEY
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromSecret: SUPABASE_SERVICE_ROLE_KEY
+      - key: DATABASE_URL
+        fromSecret: DATABASE_URL
+
+# Notes:
+# - After you import this repo into Render, go to the service settings and add the referenced secrets
+#   (SUPABASE_*, DATABASE_URL) through the Render dashboard Secrets UI.
+# - If your backend requires additional environment variables (JWT secrets, API keys, etc.),
+#   add them under the backend's `envVars` section and configure them as Render secrets.
+# - The `plan: starter` for backend is a minimal instance; choose a different `plan` if you
+#   need more CPU/memory.
+# - If you prefer to run the frontend as a Node web service instead of a static site, change
+#   the first service to `type: web_service` and set appropriate `startCommand`.

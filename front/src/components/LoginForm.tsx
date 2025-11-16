@@ -32,7 +32,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onRegister }) => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0b1220] to-[#0f172a]">
       <div className="max-w-md w-full space-y-8 p-8 bg-card/80 backdrop-blur rounded-2xl shadow-2xl border border-border">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-bold text-foreground">Portal AcadUSS</h2>
+          <h2 className="mt-6 text-center text-3xl font-bold text-foreground">Portal Brainy USS</h2>
           <p className="mt-2 text-center text-sm text-muted">Inicia sesión con tu cuenta institucional</p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>

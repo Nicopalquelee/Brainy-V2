@@ -33,3 +33,4 @@ backend/uploads/
 
 # Sonar/Scanner caches
 .scannerwork/
+.vercel

@@ -20,7 +20,7 @@ const Header: React.FC<HeaderProps> = ({ userName, onLogout, onUploadClick, onCh
             <div className="w-8 h-8 bg-gradient-to-br from-primary to-secondary rounded-lg flex items-center justify-center">
               <BookOpen className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-xl font-bold text-foreground">AcadUSS</h1>
+            <h1 className="text-xl font-bold text-foreground">Brainy USS</h1>
           </div>
         </div>
 

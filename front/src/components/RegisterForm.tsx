@@ -69,7 +69,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onBack, onRegisterSuccess }
       <div className="max-w-md w-full space-y-8 p-8 bg-card/80 backdrop-blur rounded-2xl shadow-2xl border border-border">
         <div>
           <h2 className="mt-6 text-center text-3xl font-bold text-foreground">
-            Crear cuenta en AcadUSS
+            Crear cuenta en Brainy USS
           </h2>
           <p className="mt-2 text-center text-sm text-muted">
             Regístrate con tu correo institucional
