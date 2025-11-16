@@ -1,28 +1,10 @@
-# Render YAML for Brainy-V2
-# - Frontend: Vite React app in `front/` (built and published as static site)
-# - Backend: NestJS Node app in `backend/` (TypeScript build then run)
-# Customize secrets/env vars via Render dashboard (this file references secrets by name)
-
 services:
-  - type: web_service
-    name: brainy-frontend
-    env: node
-    plan: starter
-    branch: main
-    root: front
-    buildCommand: npm ci && npm run build
-    startCommand: npm run preview
-    autoDeploy: true
-    envVars:
-      - key: NODE_ENV
-        value: production
-
-  - type: web_service
+  - type: web
     name: brainy-backend
-    env: node
+    runtime: node
     plan: starter
     branch: main
-    root: backend
+    rootDir: backend
     buildCommand: npm ci && npm run build
     startCommand: npm run start:prod
     autoDeploy: true
@@ -37,13 +19,42 @@ services:
         fromSecret: SUPABASE_SERVICE_ROLE_KEY
       - key: DATABASE_URL
         fromSecret: DATABASE_URL
+      - key: JWT_SECRET
+        fromSecret: JWT_SECRET
+      - key: OPENAI_API_KEY
+        fromSecret: OPENAI_API_KEY
 
-# Notes:
-# - After you import this repo into Render, go to the service settings and add the referenced secrets
-#   (SUPABASE_*, DATABASE_URL) through the Render dashboard Secrets UI.
-# - Both frontend and backend are configured as web_service (Node environment) for simplicity.
-# - Frontend uses `npm run preview` to serve the Vite dist build after compilation.
-# - Backend runs `npm run start:prod` which executes the compiled NestJS app from dist/.
-# - If your backend requires additional environment variables (JWT secrets, API keys, etc.),
-#   add them under the backend's `envVars` section and configure them as Render secrets.
-# - The `plan: starter` is a minimal instance; choose a different `plan` if you need more CPU/memory.
+  - type: static_site
+    name: brainy-frontend
+    branch: main
+    rootDir: front
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    autoDeploy: true
+    envVars:
+      - key: VITE_API_URL
+        value: https://brainy-backend.onrender.com
+
+# Render.yaml Configuration Notes
+# =================================
+# Backend (type: web):
+#   - Runtime: Node.js
+#   - Runs `npm run build` to compile TypeScript → dist/
+#   - Starts with `npm run start:prod` (executes dist/main.js)
+#   - Plan: starter (minimal resources; upgrade as needed)
+#
+# Frontend (type: static_site):
+#   - Builds with `npm run build` (Vite compiles React → dist/)
+#   - Publishes contents of `dist/` as static files
+#   - Sets VITE_API_URL to backend URL for API calls
+#
+# Secrets to configure in Render Dashboard:
+#   - SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY (from Supabase)
+#   - DATABASE_URL (Postgres connection string if using external DB)
+#   - JWT_SECRET (for auth tokens; generate a strong random string)
+#   - OPENAI_API_KEY (for ChatGPT integration)
+#
+# After importing this repo into Render:
+#   1. Go to Dashboard → Settings
+#   2. Add Environment → add each secret listed above
+#   3. Services will auto-deploy when you push to main
