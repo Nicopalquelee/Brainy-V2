@@ -18,7 +18,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onRegister }) => {
     setError('');
 
     try {
-      const data = await fetchJson<unknown>('/auth/login', { method: 'POST', body: { email, password } });
+      const data = await fetchJson<unknown>('auth/login', { method: 'POST', body: { email, password } });
       if (!data || data.error || !data.accessToken) {
         throw new Error(data?.error || 'Credenciales inválidas');
       }
