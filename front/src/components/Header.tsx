@@ -25,7 +25,7 @@ const Header: React.FC<HeaderProps> = ({ userName, onLogout, onUploadClick, onCh
         </div>
 
         {/* Navegación principal (ahora visible también en móvil) */}
-        <nav className="flex flex-wrap items-center gap-4 text-sm md:text-base">
+        <nav className="flex flex-wrap items-center gap-3 text-sm md:text-base">
           <button
             onClick={onHomeClick}
             className="text-foreground hover:text-primary transition-colors duration-200 font-medium"
@@ -43,14 +43,14 @@ const Header: React.FC<HeaderProps> = ({ userName, onLogout, onUploadClick, onCh
           </button>
         </nav>
 
-        {/* Botón Chatea con Brainy */}
+        {/* Botón Chatea con Brainy (compacto en móvil) */}
         {onChatClick && (
           <button
             onClick={onChatClick}
-            className="flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-blue-600 text-white px-3 py-2 rounded-lg hover:from-purple-600 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl text-xs md:text-sm"
+            className="flex items-center space-x-1 sm:space-x-2 bg-gradient-to-r from-purple-500 to-blue-600 text-white px-2 sm:px-3 py-2 rounded-lg hover:from-purple-600 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl text-xs sm:text-sm"
           >
             <MessageCircle className="w-4 h-4" />
-            <span className="font-medium">Chatea con Brainy</span>
+            <span className="font-medium">Brainy</span>
           </button>
         )}
 

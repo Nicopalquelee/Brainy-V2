@@ -532,8 +532,8 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
 
     {/* Content area: left sidebar + chat */}
   <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* Left sidebar: Conversations */}
-        <aside className="w-80 border-r border-border bg-card flex flex-col">
+        {/* Left sidebar: Conversations (oculto en pantallas pequeñas para dar más espacio al chat) */}
+        <aside className="hidden md:flex w-80 border-r border-border bg-card flex-col">
           <div className="px-4 py-3 border-b border-border flex items-center justify-between">
             <h2 className="text-sm font-semibold text-foreground">Conversaciones</h2>
             <button
@@ -843,7 +843,7 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
           {/* Close Chat column wrapper */}
           </div>
 
-          {/* Preview column */}
+          {/* Preview column (solo en pantallas grandes) */}
           {activeDocument && (
             <aside className="hidden lg:block w-[38%] border-l border-border bg-background">
               <div className="h-full flex flex-col">
