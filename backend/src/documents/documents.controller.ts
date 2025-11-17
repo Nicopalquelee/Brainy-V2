@@ -4,13 +4,11 @@ import { DocumentsService } from './documents.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { basename, extname, join } from 'path';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DocConverterService } from './doc-converter.service';
-import { unlink } from 'fs/promises';
-import { createReadStream } from 'fs';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { s3 } from '../config/s3';
+import { readFile, unlink } from 'fs/promises';
+import { supabaseAdmin } from '../config/supabase';
 
 @ApiTags('documents')
 @Controller('documents')
@@ -56,10 +54,10 @@ export class DocumentsController {
       let contentUrl = dto.contentUrl;
       let fileType = file ? file.mimetype : dto.fileType;
       let fileSize = file ? file.size : dto.fileSize;
-      const bucket = process.env.AWS_S3_BUCKET;
+      const bucket = process.env.SUPABASE_STORAGE_BUCKET;
 
       if (file && !bucket) {
-        throw new BadRequestException('Falta configurar AWS_S3_BUCKET para subir archivos');
+        throw new BadRequestException('Falta configurar SUPABASE_STORAGE_BUCKET para subir archivos');
       }
       
       // Si el archivo es DOC/DOCX, convertirlo a PDF
@@ -109,7 +107,7 @@ export class DocumentsController {
       
       if (file && bucket) {
         const uploadPath = tempPdfPath || join(process.cwd(), 'uploads', file.filename);
-        const uploaded = await this.uploadFileToS3(uploadPath, fileType || file.mimetype || 'application/octet-stream');
+        const uploaded = await this.uploadFileToSupabase(uploadPath, fileType || file?.mimetype || 'application/octet-stream');
         contentUrl = uploaded.url;
 
         // Limpiar archivos temporales
@@ -134,21 +132,24 @@ export class DocumentsController {
     }
   }
 
-  private async uploadFileToS3(localPath: string, mimeType: string) {
-    const bucket = process.env.AWS_S3_BUCKET!;
-    const key = `uploads/${Date.now()}-${localPath.split(/[/\\]/).pop()}`;
-    const command = new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: createReadStream(localPath),
-      ContentType: mimeType,
-    });
-    await s3.send(command);
+  private async uploadFileToSupabase(localPath: string, mimeType: string) {
+    const bucket = process.env.SUPABASE_STORAGE_BUCKET!;
+    const key = `uploads/${Date.now()}-${basename(localPath)}`;
+    const buffer = await readFile(localPath);
 
-    const baseUrl = (process.env.AWS_S3_PUBLIC_URL || '').replace(/\/$/, '');
-    const url = baseUrl
-      ? `${baseUrl}/${key}`
-      : `https://${bucket}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
+    const { error } = await supabaseAdmin.storage
+      .from(bucket)
+      .upload(key, buffer, {
+        contentType: mimeType,
+        upsert: false
+      });
+
+    if (error) {
+      throw new Error(`No se pudo subir el archivo a Supabase Storage: ${error.message}`);
+    }
+
+    const { data } = supabaseAdmin.storage.from(bucket).getPublicUrl(key);
+    const url = data?.publicUrl || key;
 
     return { key, url };
   }

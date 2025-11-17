@@ -108,10 +108,10 @@ Si deseas habilitar la verificación por correo en el futuro, consulta:
 
 ### 📂 Almacenamiento de archivos
 
-Los apuntes subidos se almacenan en **AWS S3** (no en el filesystem del servidor). Sigue [S3_SETUP.md](./S3_SETUP.md) para:
-- Crear el bucket y las credenciales IAM
-- Configurar las variables `AWS_*` en Render
-- Entender cómo funcionan los archivos temporales y la conversión DOC → PDF
+Los apuntes subidos se almacenan en **Supabase Storage**. Revisa [SUPABASE_STORAGE_SETUP.md](./SUPABASE_STORAGE_SETUP.md) para:
+- Crear el bucket y las policies necesarias
+- Configurar `SUPABASE_STORAGE_BUCKET`
+- Conocer el flujo de conversión DOC → PDF y cómo se generan las URLs públicas
 
 ### Ejemplo de uso:
 
