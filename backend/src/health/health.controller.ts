@@ -4,6 +4,7 @@ import { Controller, Get } from '@nestjs/common';
 export class HealthController {
   @Get('health')
   health() {
+    // This will be available at /api/health due to global prefix
     return { status: 'ok', timestamp: new Date().toISOString() };
   }
 
