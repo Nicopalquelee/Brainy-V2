@@ -1,0 +1,28 @@
+# Variables de Entorno para FRONTEND en Render
+# Servicio: brainy-frontend (https://brainy-frontend.onrender.com)
+# 
+# INSTRUCCIONES:
+# 1. Ve a tu servicio frontend en Render
+# 2. Click en "Environment" (Variables de entorno)
+# 3. Agrega/copia estas variables una por una:
+
+# ============================================
+# API URL - CRÍTICO para conectar con backend
+# ============================================
+VITE_API_URL=
+
+# ============================================
+# Node Environment
+# ============================================
+NODE_ENV=production
+
+# ============================================
+# NOTAS IMPORTANTES:
+# ============================================
+# 1. VITE_API_URL debe ser EXACTAMENTE: https://brainy-v2.onrender.com/api
+#    (Nota el /api al final - es necesario porque tu backend usa ese prefijo)
+# 2. Las variables VITE_* se inyectan en BUILD TIME
+# 3. Después de agregar/cambiar VITE_API_URL, Render DEBE hacer un redeploy
+# 4. Si no se redeploya automáticamente, haz un redeploy manual
+# 5. Verifica que el servicio esté "Live" después del redeploy
+

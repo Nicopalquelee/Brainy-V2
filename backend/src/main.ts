@@ -22,13 +22,15 @@ async function bootstrap() {
   // ============================
   // 🔵 CORS PARA PRODUCCIÓN
   // ============================
-  app.enableCors({
-    origin: [
-      "https://brainy-v2-front.onrender.com",   // REEMPLAZA si cambió
-      "https://www.brainyai.cl",
-      "https://brainyai.cl"
-    ],
-    credentials: true,
+  const configService = app.get(ConfigService);
+  const originSetting = configService.get<string>('app.corsOrigin') || '*';
+  // Allow '*' or a comma-separated list of origins
+  const corsOrigin = originSetting === '*'
+    ? true
+    : originSetting.split(',').map(o => o.trim()).filter(Boolean);
+  app.enableCors({ 
+    origin: corsOrigin, 
+    credentials: true 
   });
 
   // ============================
