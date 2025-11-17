@@ -1105,9 +1105,13 @@ Solicitud original: ${originalRequest}`
           if (showRelated) {
             usedDocument = relatedDocuments[0];
             autoLock = true;
-            // Si el modelo generó una negación de acceso, reemplazar esa parte por un encabezado neutro
-            if (/no tengo acceso a documentos/i.test(answer) || /no tengo acceso/i.test(answer)) {
-              answer = `He encontrado algunos apuntes relevantes sobre ${searchQuery}:\n` + relatedDocuments.map((d: any, i: number) => `${i + 1}. ${d.title}${d.subject ? ` (${d.subject})` : ''}`).join('\n') + `\n\n¿En qué aspecto específico necesitas ayuda?`;
+            // Si el modelo generó una negación (sin acceso/apuntes), reemplazar por listado positivo
+            const contradictionRegex = /(no\s+(tengo|dispongo|cuento)\s+(de\s+)?(apuntes|documentos|materiales))/i;
+            const noAccessRegex = /no tengo acceso/i;
+            if (contradictionRegex.test(answer) || noAccessRegex.test(answer)) {
+              answer = `He encontrado algunos apuntes relevantes sobre ${searchQuery}:\n` +
+                relatedDocuments.map((d: any, i: number) => `${i + 1}. ${d.title}${d.subject ? ` (${d.subject})` : ''}`).join('\n') +
+                `\n\n¿Quieres que use alguno de ellos para ayudarte?`;
             }
           }
         }
