@@ -105,8 +105,7 @@ Responde siempre en español de forma directa y útil.`;
       // 3. Determinar si necesita documentos específicos
       const needsDocs = intent.needsDocuments || this.needsDocumentContext(text);
       
-      // 4. Detectar si pregunta por apuntes disponibles
-      const askingAboutNotes = this.isQueryAboutNotes(text);
+      // 4. Detectar si pregunta por apuntes disponibles (se maneja después del análisis de intención)
 
       // 5. Manejar solicitud específica de documento
       const requestedDocTitle = this.extractRequestedDocumentTitle(text);
@@ -125,7 +124,12 @@ Responde siempre en español de forma directa y útil.`;
       }
 
       // 8. Manejar consulta sobre apuntes disponibles
-      if (askingAboutNotes) {
+      const notesQueryResult = this.isQueryAboutNotes(text);
+      if (notesQueryResult.isQuery) {
+        // Si se detectó una materia en la pregunta, actualizar el intent
+        if (notesQueryResult.subject && !intent.subject) {
+          intent.subject = notesQueryResult.subject;
+        }
         return await this.handleNotesInventoryQuery(intent, conversationContext, opts);
       }
 
@@ -214,7 +218,7 @@ Responde siempre en español de forma directa y útil.`;
     text: string,
     opts: { userId?: string; conversationId?: string; title?: string },
     onDelta: (delta: string) => void
-  ): Promise<{ finalAnswer: string; conversationId?: string }> {
+  ): Promise<{ finalAnswer: string; conversationId?: string; showRelated?: boolean; relatedDocuments?: any[]; subjectQuery?: string; usedDocument?: any; autoLock?: boolean }> {
     if (!this.openai) {
       // Modo mock: emitir respuesta completa en un único delta
       const mock = await this.getMockAcademicResponse(text);
@@ -225,6 +229,39 @@ Responde siempre en español de forma directa y útil.`;
     // Intento rápido (sin segunda llamada a OpenAI)
     const intent = this.fallbackIntentAnalysis(text);
     const conversationContext = await this.getConversationContext(opts?.conversationId);
+
+    // Verificar si es una pregunta sobre apuntes disponibles
+    const notesQueryResult = this.isQueryAboutNotes(text);
+    if (notesQueryResult.isQuery) {
+      if (notesQueryResult.subject && !intent.subject) {
+        intent.subject = notesQueryResult.subject;
+      }
+      const notesResult = await this.handleNotesInventoryQuery(intent, conversationContext, opts);
+      // Enviar respuesta completa de una vez (no streaming para inventario)
+      onDelta(notesResult.answer);
+      return {
+        finalAnswer: notesResult.answer,
+        conversationId: notesResult.conversationId,
+        showRelated: notesResult.showRelated,
+        relatedDocuments: notesResult.relatedDocuments,
+        subjectQuery: notesResult.subjectQuery || undefined,
+        usedDocument: notesResult.relatedDocuments?.[0],
+        autoLock: notesResult.showRelated && notesResult.relatedDocuments && notesResult.relatedDocuments.length > 0
+      };
+    }
+
+    // Paso proactivo: intentar ofrecer apuntes antes de generar respuesta larga
+    let proactiveDocs: any[] = [];
+    let proactiveSubject: string | undefined;
+    try {
+      const proactive = await this.shouldOfferDocuments(text, intent, conversationContext);
+      if (proactive.offer && proactive.docs.length > 0) {
+        proactiveDocs = proactive.docs.slice(0, 5);
+        proactiveSubject = proactive.subjectMatched || intent.subject || proactive.queryUsed || undefined;
+      }
+    } catch (e) {
+      console.warn('⚠️ Error en paso proactivo shouldOfferDocuments (stream):', e);
+    }
 
     // Construir prompt contextual mínimo (sin PDF pesado para rapidez)
     const basePrompt = this.buildContextualPrompt(text, intent, conversationContext, '');
@@ -284,7 +321,15 @@ Responde siempre en español de forma directa y útil.`;
       }
     }
 
-    return { finalAnswer: fullAnswer, conversationId: finalConversationId };
+    return {
+      finalAnswer: fullAnswer,
+      conversationId: finalConversationId,
+      showRelated: proactiveDocs.length > 0,
+      relatedDocuments: proactiveDocs,
+      subjectQuery: proactiveSubject,
+      usedDocument: proactiveDocs[0],
+      autoLock: proactiveDocs.length > 0
+    };
   }
 
   /**
@@ -695,14 +740,44 @@ Solicitud original: ${originalRequest}`
   ) {
         let related: any[] = [];
         let total = 0;
+        let searchQuery = intent.subject || conversationContext.subject || '';
+        const originalQuery = searchQuery; // Guardar query original para mostrar
+        
+        // NO normalizar aquí - usar la query exacta que el usuario proporcionó
+        // La normalización puede cambiar "matematicas discretas" a algo diferente
+        
         try {
-      const searchQuery = intent.subject || conversationContext.subject || '';
-      
       if (searchQuery) {
+        // Buscar por materia específica (sin normalizar para mantener precisión)
         const items = await this.docs.search(searchQuery);
             related = Array.isArray(items) ? items.slice(0, 10) : [];
         total = Array.isArray(items) ? items.length : 0;
+        
+        // Filtrar resultados para que sean más relevantes
+        // Si la búsqueda tiene múltiples palabras, priorizar documentos que contengan todas
+        if (total > 0 && searchQuery.split(/\s+/).length > 1) {
+          const queryWords = this.removeAccents(searchQuery.toLowerCase()).split(/\s+/).filter(w => w.length > 2);
+          related = related.filter((doc: any) => {
+            const docText = this.removeAccents((doc.title || '') + ' ' + (doc.subject || '')).toLowerCase();
+            // Verificar que al menos 2 palabras de la query estén en el documento
+            const matches = queryWords.filter(word => docText.includes(word)).length;
+            return matches >= Math.min(2, queryWords.length);
+          });
+          total = related.length;
+        }
+        
+        // Si no se encontraron resultados, intentar búsqueda más amplia con keywords
+        if (total === 0 && intent.keywords && intent.keywords.length > 0) {
+          const keywordSearch = intent.keywords.slice(0, 2).join(' ');
+          const keywordItems = await this.docs.search(keywordSearch);
+          if (Array.isArray(keywordItems) && keywordItems.length > 0) {
+            related = keywordItems.slice(0, 10);
+            total = keywordItems.length;
+            searchQuery = keywordSearch; // Actualizar query usado
+          }
+        }
           } else {
+            // Si no hay materia específica, listar todos los apuntes disponibles
             const res = await this.docs.list(1, 20);
             related = res.items || [];
             total = res.total || related.length;
@@ -711,27 +786,38 @@ Solicitud original: ${originalRequest}`
           console.warn('⚠️ Error obteniendo inventario de apuntes:', e);
         }
 
-    const subjectPart = intent.subject ? ` de ${intent.subject}` : '';
-    const countText = total > 0 ? `Tengo ${total} apuntes${subjectPart}.` : `No encuentro apuntes${subjectPart}.`;
+    // Usar query original para mostrar al usuario
+    const subjectPart = originalQuery ? ` de "${originalQuery}"` : '';
     
-    let listText = '';
-    if (related && related.length > 0) {
-      listText = `\n\nEjemplos:\n`;
+    // Construir respuesta más inteligente y útil
+    let answer = '';
+    if (total > 0) {
+      answer = `¡Sí! Tengo ${total} apunte${total > 1 ? 's' : ''}${subjectPart}:\n\n`;
       related.slice(0, 5).forEach((d: any, index: number) => {
         const title = d.title || d.subject || 'Documento';
         const subject = d.subject ? ` (${d.subject})` : '';
-        listText += `${index + 1}. ${title}${subject}\n`;
+        answer += `${index + 1}. ${title}${subject}\n`;
       });
+      if (total > 5) {
+        answer += `\n... y ${total - 5} más.\n`;
+      }
+      answer += `\n¿Quieres que use alguno para ayudarte?`;
+    } else {
+      // Respuesta más útil cuando no hay apuntes
+      if (originalQuery) {
+        answer = `No tengo apuntes específicos de "${originalQuery}" en este momento. `;
+      } else {
+        answer = `No tengo apuntes disponibles en este momento. `;
+      }
+      answer += `Pero puedo ayudarte con conceptos y explicaciones sobre ${originalQuery || 'la materia'}. ¿Qué necesitas saber?`;
     }
-
-    const answer = `${countText}${listText}\n\n¿Quieres que use alguno?`;
 
         // Persistir historial mínimo si aplica
         let finalConversationId = opts?.conversationId;
         try {
           if (opts?.userId) {
             if (!finalConversationId) {
-          const title = opts?.title || this.generateTitleFromText(intent.subject || 'Consulta sobre apuntes');
+          const title = opts?.title || this.generateTitleFromText(searchQuery || 'Consulta sobre apuntes');
               const conv = await this.createConversation(opts.userId, title);
               finalConversationId = conv.id as unknown as string;
             }
@@ -746,7 +832,7 @@ Solicitud original: ${originalRequest}`
           answer,
           conversationId: finalConversationId,
           showRelated: related.length > 0,
-      subjectQuery: intent.subject || null,
+      subjectQuery: searchQuery || null,
           relatedDocuments: related
         };
       }
@@ -1543,8 +1629,9 @@ Si solicita un quiz/examen, detecta el tipo y número de preguntas.`
   }
 
   // Detecta si la consulta es sobre si existen apuntes/notas en la BBDD
-  private isQueryAboutNotes(text: string): boolean {
-    if (!text) return false;
+  // También extrae la materia si se menciona (ej: "tienes apuntes de quimica")
+  private isQueryAboutNotes(text: string): { isQuery: boolean; subject?: string } {
+    if (!text) return { isQuery: false };
     const s = this.removeAccents(text.toLowerCase());
     const keywords = [
       'tienes apuntes',
@@ -1559,9 +1646,36 @@ Si solicita un quiz/examen, detecta el tipo y número de preguntas.`
       'tienes notas',
       'hay notas',
       'hay documentos',
-      'tienen apuntes'
+      'tienen apuntes',
+      'tienes material',
+      'hay material',
+      'tienes documentos',
+      'tienes pdf'
     ];
-    return keywords.some(k => s.includes(k));
+    
+    const isQuery = keywords.some(k => s.includes(k));
+    if (!isQuery) return { isQuery: false };
+    
+    // Intentar extraer materia de la pregunta
+    // Patrones: "tienes apuntes de X", "hay apuntes de X", "apuntes de X"
+    const subjectPatterns = [
+      /(?:tienes|hay|tienen)\s+(?:apuntes|notas|documentos|material|pdf)\s+(?:de|sobre|acerca de)\s+([a-záéíóúñ\s]+?)(?:\?|$|\.|,)/i,
+      /(?:apuntes|notas|documentos|material|pdf)\s+(?:de|sobre|acerca de)\s+([a-záéíóúñ\s]+?)(?:\?|$|\.|,)/i,
+      /(?:tienes|hay)\s+([a-záéíóúñ\s]+?)\s+(?:apuntes|notas|documentos|material)/i
+    ];
+    
+    for (const pattern of subjectPatterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        const subject = match[1].trim();
+        // Validar que no sea una palabra vacía o muy corta
+        if (subject.length >= 3 && !['el', 'la', 'los', 'las', 'un', 'una'].includes(subject.toLowerCase())) {
+          return { isQuery: true, subject };
+        }
+      }
+    }
+    
+    return { isQuery: true };
   }
 
   // Verifica si el documento coincide con la materia detectada (por título o subject)

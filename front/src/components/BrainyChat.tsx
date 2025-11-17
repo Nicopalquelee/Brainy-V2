@@ -322,34 +322,6 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
         // limpiar sugerencias relacionadas en modo streaming
         setRelatedDocs(null);
         setRelatedSubject(null);
-        // Paralelamente, si detectamos materia, buscamos sugerencias para mostrarlas mientras llega el stream
-        if (mentionsSubject(userMessage.text)) {
-          const q = userMessage.text;
-          fetchJson<any>(`/chat/query`, {
-            method: 'POST',
-            token: token || undefined,
-            body: { text: userMessage.text, conversationId }
-          }).then((data) => {
-            if (data && data.showRelated && Array.isArray(data.relatedDocuments)) {
-              setRelatedDocs(data.relatedDocuments);
-              setRelatedSubject(data.subjectQuery || q);
-              if (data.autoLock && data.usedDocument) {
-                setActiveDocument({
-                  id: String(data.usedDocument.id),
-                  title: data.usedDocument.title,
-                  subject: data.usedDocument.subject,
-                  ...(data.usedDocument.file_url ? { file_url: data.usedDocument.file_url } : {}),
-                  ...(data.usedDocument.contentUrl ? { contentUrl: data.usedDocument.contentUrl } : {}),
-                  ...(data.usedDocument.path ? { path: data.usedDocument.path } : {})
-                } as any);
-              }
-              if (data.conversationId && !conversationId) {
-                setConversationId(data.conversationId);
-                loadConversations();
-              }
-            }
-          }).catch(() => {/* silencioso */});
-        }
         
         // Streaming SSE para consultas generales
         const base = getApiBase();
@@ -371,7 +343,7 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
           throw new Error('Streaming no soportado por el navegador/servidor.');
         }
 
-        // Crear mensaje del asistente “en construcción”
+        // Crear mensaje del asistente "en construcción"
   const assistantId = (Date.now() + 1).toString();
   setMessages(prev => [...prev, { id: assistantId, text: '', isUser: false, timestamp: new Date() }]);
 
@@ -410,6 +382,20 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
                 const payload = JSON.parse(json);
                 if (payload.delta) {
                   setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, text: (m.text + payload.delta) } : m));
+                } else if (payload.showRelated && Array.isArray(payload.relatedDocuments)) {
+                  // Manejar documentos relacionados del stream
+                  setRelatedDocs(payload.relatedDocuments);
+                  setRelatedSubject(payload.subjectQuery || null);
+                  if (payload.autoLock && payload.usedDocument) {
+                    setActiveDocument({
+                      id: String(payload.usedDocument.id),
+                      title: payload.usedDocument.title,
+                      subject: payload.usedDocument.subject,
+                      ...(payload.usedDocument.file_url ? { file_url: payload.usedDocument.file_url } : {}),
+                      ...(payload.usedDocument.contentUrl ? { contentUrl: payload.usedDocument.contentUrl } : {}),
+                      ...(payload.usedDocument.path ? { path: payload.usedDocument.path } : {})
+                    } as any);
+                  }
                 } else if (payload.conversationId) {
                   if (!conversationId) {
                     setConversationId(payload.conversationId);
@@ -507,9 +493,9 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
   };
 
   return (
-  <div className="h-full flex flex-col bg-background overflow-hidden">
-      {/* Header */}
-      <div className="bg-card border-b border-border px-4 py-3 shadow-sm">
+  <div className="fixed inset-0 flex flex-col bg-background overflow-hidden">
+      {/* Header - Fixed */}
+      <div className="flex-shrink-0 bg-card border-b border-border px-4 py-3 shadow-sm z-10">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <button
@@ -545,7 +531,7 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
       </div>
 
     {/* Content area: left sidebar + chat */}
-  <div className="flex-1 flex min-h-0">
+  <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left sidebar: Conversations */}
         <aside className="w-80 border-r border-border bg-card flex flex-col">
           <div className="px-4 py-3 border-b border-border flex items-center justify-between">
@@ -602,12 +588,12 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
         </aside>
 
         {/* Chat + Preview columns */}
-  <div className="flex-1 flex min-h-0">
+  <div className="flex-1 flex min-h-0 overflow-hidden">
           {/* Chat column */}
-          <div className="flex-1 flex flex-col min-h-0">
-          {/* Messages Area */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Messages Area - Scrollable */}
           <div
-            className="flex-1 overflow-y-auto px-6 md:px-8 py-6 custom-scrollbar"
+            className="flex-1 overflow-y-auto px-6 md:px-8 py-6 custom-scrollbar min-h-0"
             ref={messagesContainerRef}
             onScroll={handleMessagesScroll}
           >
@@ -720,9 +706,9 @@ const BrainyChat: React.FC<BrainyChatProps> = ({ onBack }) => {
             </div>
           </div>
 
-          {/* Input Area (hidden on landing) */}
+          {/* Input Area (hidden on landing) - Fixed at bottom */}
           {!showLanding && (
-          <div className="bg-card border-t border-border px-4 py-4">
+          <div className="flex-shrink-0 bg-card border-t border-border px-4 py-4 z-10">
             <div className="max-w-4xl mx-auto">
               {/* Documento activo (modo pegajoso) */}
               {activeDocument && (

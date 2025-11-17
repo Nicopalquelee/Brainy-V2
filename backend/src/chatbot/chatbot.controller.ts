@@ -44,7 +44,7 @@ export class ChatbotController {
     res.flushHeaders?.();
 
     try {
-      // streamReply ahora nos devuelve conversationId definitivo
+      // streamReply ahora nos devuelve conversationId definitivo y documentos relacionados
       const result = await this.bot.streamReply(body.text, {
         userId,
         conversationId: body.conversationId,
@@ -53,6 +53,17 @@ export class ChatbotController {
         res.write(`data:${JSON.stringify({ delta })}\n\n`);
         (res as any).flush?.();
       });
+      // Enviar información de documentos relacionados si existe
+      if (result.showRelated && result.relatedDocuments) {
+        res.write(`data:${JSON.stringify({
+          showRelated: true,
+          relatedDocuments: result.relatedDocuments,
+          subjectQuery: result.subjectQuery,
+          usedDocument: result.usedDocument,
+          autoLock: result.autoLock
+        })}\n\n`);
+        (res as any).flush?.();
+      }
       // Enviar conversación id (solo una vez al final si no se envió antes)
       res.write(`data:${JSON.stringify({ conversationId: result.conversationId })}\n\n`);
       res.write(`data:${JSON.stringify({ done: true })}\n\n`);

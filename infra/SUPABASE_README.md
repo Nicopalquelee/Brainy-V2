@@ -94,9 +94,17 @@ Supabase Auth proporciona:
 
 - Registro/Login con email y contraseña
 - OAuth con Google, GitHub, etc.
-- Verificación de email
+- Verificación de email (opcional; actualmente deshabilitada para iniciar sesión automáticamente)
 - Reseteo de contraseña
 - Gestión de sesiones
+
+### Nota sobre confirmación de email
+
+Actualmente la aplicación **no requiere confirmación de email**: los usuarios pueden iniciar sesión inmediatamente después de registrarse.
+
+Si deseas habilitar la verificación por correo en el futuro, consulta:
+- [SUPABASE_EMAIL_CONFIG.md](./SUPABASE_EMAIL_CONFIG.md) para los pasos de configuración
+- [SMTP_SETUP_GUIDE.md](./SMTP_SETUP_GUIDE.md) si necesitas configurar un proveedor SMTP personalizado
 
 ### Ejemplo de uso:
 

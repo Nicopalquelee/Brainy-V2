@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, UserPlus, ArrowLeft, MailCheck } from 'lucide-react';
-import { auth } from '../lib/supabase';
+import { Eye, EyeOff, UserPlus, ArrowLeft } from 'lucide-react';
 
 interface RegisterFormProps {
   onBack: () => void;
@@ -13,7 +12,6 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onBack, onRegisterSuccess }
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -51,14 +49,12 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onBack, onRegisterSuccess }
         return;
       }
 
-      // Si viene accessToken, auto-login inmediato
       if (data.accessToken && onRegisterSuccess) {
         onRegisterSuccess(data.accessToken);
         return;
       }
 
-      // Fallback: mostrar confirmación
-      setSuccess(true);
+      setError('No se pudo completar el registro automáticamente. Intenta iniciar sesión manualmente.');
     } catch (err: any) {
       setError(err?.message || 'Error al registrar el usuario. Por favor, intenta nuevamente.');
     }
@@ -75,24 +71,6 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onBack, onRegisterSuccess }
             Regístrate con tu correo institucional
           </p>
         </div>
-        {success ? (
-          <div className="mt-8 space-y-6 text-center">
-            <div className="flex justify-center mb-2">
-              <div className="w-14 h-14 rounded-full bg-green-500/10 border border-green-500/30 flex items-center justify-center">
-                <MailCheck className="w-7 h-7 text-green-500" />
-              </div>
-            </div>
-            <h3 className="text-lg font-semibold">Revisa tu correo</h3>
-            <p className="text-sm text-muted-foreground">
-              Te enviamos un enlace de confirmación a <strong>{email}</strong>.
-              Abre el correo y confirma tu cuenta para iniciar sesión.
-            </p>
-            <button type="button" onClick={onBack} className="mt-4 group relative w-full flex items-center justify-center gap-2 py-2 px-4 border border-border text-sm font-medium rounded-md text-foreground bg-background hover:bg-accent focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
-              <ArrowLeft className="w-4 h-4" />
-              <span>Volver al inicio de sesión</span>
-            </button>
-          </div>
-        ) : (
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="rounded-md shadow-sm space-y-3">
             <div>
@@ -181,7 +159,6 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onBack, onRegisterSuccess }
             </button>
           </div>
         </form>
-        )}
 
         <div className="mt-4 text-center text-sm text-muted">
           <p>

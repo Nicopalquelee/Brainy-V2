@@ -47,7 +47,11 @@ export class AuthController {
       if (!user) return { error: 'Credenciales inválidas' };
       return this.authService.login(user);
     } catch (e: any) {
+      // Si el error es sobre email no confirmado, devolver mensaje específico
       const msg = e?.message || 'Error al iniciar sesión';
+      if (msg.includes('confirma tu correo')) {
+        return { error: msg };
+      }
       return { error: msg };
     }
   }

@@ -15,7 +15,17 @@ export class AuthService {
     });
 
     if (error || !data?.user) {
+      // Check if error is due to unconfirmed email
+      if (error?.message?.toLowerCase().includes('email not confirmed') || 
+          error?.message?.toLowerCase().includes('email_not_confirmed')) {
+        throw new Error('Por favor, confirma tu correo electrónico antes de iniciar sesión. Revisa tu bandeja de entrada.');
+      }
       return null;
+    }
+
+    // Verify that email is confirmed
+    if (!data.user.email_confirmed_at && !data.user.confirmed_at) {
+      throw new Error('Por favor, confirma tu correo electrónico antes de iniciar sesión. Revisa tu bandeja de entrada.');
     }
 
     // Try to fetch profile to get role and other info

@@ -8,22 +8,28 @@ export class DocumentsService {
     // Prefer 4.5 for PDF, but if DB column is integer, decimals will fail.
     // Use integer fallback (4) to avoid insert errors. See README note for enabling decimals.
     const isPdf = (dto as any)?.fileType && String((dto as any).fileType).toLowerCase().includes('pdf');
-    const initialRatingInt = isPdf ? 3 : 0;
+    // El constraint CHECK (rating >= 1 AND rating <= 5) no permite 0, usar NULL o 1
+    const initialRatingInt = isPdf ? 3 : null;
+
+    const insertData: any = {
+      title: dto.title,
+      content: dto.description || '',
+      subject: dto.subject,
+      file_url: dto.contentUrl,
+      author_id: dto.author_id,
+      status: 'published',
+      downloads: 0,
+      views: 0
+    };
+    
+    // Solo incluir rating si tiene valor (el constraint no permite 0)
+    if (initialRatingInt !== null) {
+      insertData.rating = initialRatingInt;
+    }
 
     const { data, error } = await supabase
       .from('notes')
-      .insert({
-        title: dto.title,
-        content: dto.description || '',
-        subject: dto.subject,
-        file_url: dto.contentUrl,
-        author_id: dto.author_id,
-        status: 'published',
-        downloads: 0,
-        views: 0,
-        // Nota: Si quieres 4.5, migra la columna rating a numeric(3,1) y cambia este valor a 4.5
-        rating: initialRatingInt
-      })
+      .insert(insertData)
       .select()
       .single();
 

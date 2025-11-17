@@ -20,11 +20,15 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onRegister }) => {
     try {
       const data = await fetchJson<unknown>('auth/login', { method: 'POST', body: { email, password } });
       if (!data || data.error || !data.accessToken) {
-        throw new Error(data?.error || 'Credenciales inválidas');
+        // Mostrar el mensaje de error específico del backend (puede ser sobre email no confirmado)
+        setError((data as any)?.error || 'Credenciales inválidas');
+        return;
       }
       onLogin(data.accessToken as string);
-    } catch (err) {
-      setError('Error al iniciar sesión. Por favor, verifica tus credenciales.');
+    } catch (err: any) {
+      // Si el error viene del backend con un mensaje específico, mostrarlo
+      const errorMessage = err?.message || (err as any)?.error || 'Error al iniciar sesión. Por favor, verifica tus credenciales.';
+      setError(errorMessage);
     }
   };
 
