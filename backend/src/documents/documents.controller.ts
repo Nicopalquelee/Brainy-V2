@@ -8,6 +8,9 @@ import { extname, join } from 'path';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DocConverterService } from './doc-converter.service';
 import { unlink } from 'fs/promises';
+import { createReadStream } from 'fs';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { s3 } from '../config/s3';
 
 @ApiTags('documents')
 @Controller('documents')
@@ -47,11 +50,17 @@ export class DocumentsController {
   )
   async create(@UploadedFile() file: any, @Body() dto: CreateDocumentDto, @Req() req: any) {
     let originalFilePath: string | null = null;
+    let tempPdfPath: string | null = null;
     try {
       const userId = req?.user?.sub || req?.user?.userId;
-      let contentUrl = file ? `/uploads/${file.filename}` : dto.contentUrl;
+      let contentUrl = dto.contentUrl;
       let fileType = file ? file.mimetype : dto.fileType;
       let fileSize = file ? file.size : dto.fileSize;
+      const bucket = process.env.AWS_S3_BUCKET;
+
+      if (file && !bucket) {
+        throw new BadRequestException('Falta configurar AWS_S3_BUCKET para subir archivos');
+      }
       
       // Si el archivo es DOC/DOCX, convertirlo a PDF
       if (file && this.docConverter.isDocFile(file.mimetype, file.filename)) {
@@ -61,6 +70,7 @@ export class DocumentsController {
           
           console.log(`🔄 Convirtiendo ${file.filename} a PDF...`);
           const pdfPath = await this.docConverter.convertDocToPdf(originalPath);
+          tempPdfPath = pdfPath;
           
           // Verificar que el PDF se generó correctamente
           const fs = require('fs');
@@ -72,7 +82,6 @@ export class DocumentsController {
           const pdfFilename = pdfPath.split(/[/\\]/).pop() || file.filename.replace(/\.(doc|docx)$/i, '.pdf');
           
           // Actualizar los valores para usar el PDF
-          contentUrl = `/uploads/${pdfFilename}`;
           fileType = 'application/pdf';
           
           // Obtener el tamaño del archivo PDF generado
@@ -94,9 +103,22 @@ export class DocumentsController {
           // Si falla la conversión, continuar con el archivo original
           // pero mostrar un warning
           console.warn('⚠️ Continuando con el archivo original sin conversión');
+          originalFilePath = join(process.cwd(), 'uploads', file.filename);
         }
       }
       
+      if (file && bucket) {
+        const uploadPath = tempPdfPath || join(process.cwd(), 'uploads', file.filename);
+        const uploaded = await this.uploadFileToS3(uploadPath, fileType || file.mimetype || 'application/octet-stream');
+        contentUrl = uploaded.url;
+
+        // Limpiar archivos temporales
+        await this.safeUnlink(uploadPath);
+        if (originalFilePath && originalFilePath !== uploadPath) {
+          await this.safeUnlink(originalFilePath);
+        }
+      }
+
       return await this.docs.create({ 
         ...dto, 
         contentUrl,
@@ -105,17 +127,40 @@ export class DocumentsController {
         author_id: userId
       });
     } catch (err: unknown) {
-      // Limpiar archivo original si existe y hubo error
-      if (originalFilePath) {
-        try {
-          await unlink(originalFilePath);
-        } catch (cleanupError) {
-          console.warn('⚠️ Error al limpiar archivo temporal:', cleanupError);
-        }
-      }
-      // Normalize multer and other errors as BadRequest
+      await this.safeUnlink(originalFilePath);
+      await this.safeUnlink(tempPdfPath);
       const errorMessage = err instanceof Error ? err.message : 'Upload failed';
       throw new BadRequestException(errorMessage);
+    }
+  }
+
+  private async uploadFileToS3(localPath: string, mimeType: string) {
+    const bucket = process.env.AWS_S3_BUCKET!;
+    const key = `uploads/${Date.now()}-${localPath.split(/[/\\]/).pop()}`;
+    const command = new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: createReadStream(localPath),
+      ContentType: mimeType,
+    });
+    await s3.send(command);
+
+    const baseUrl = (process.env.AWS_S3_PUBLIC_URL || '').replace(/\/$/, '');
+    const url = baseUrl
+      ? `${baseUrl}/${key}`
+      : `https://${bucket}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
+
+    return { key, url };
+  }
+
+  private async safeUnlink(pathToDelete?: string | null) {
+    if (!pathToDelete) return;
+    try {
+      await unlink(pathToDelete);
+    } catch (error) {
+      if ((error as any)?.code !== 'ENOENT') {
+        console.warn('⚠️ Error al eliminar temporal:', (error as any)?.message || error);
+      }
     }
   }
 

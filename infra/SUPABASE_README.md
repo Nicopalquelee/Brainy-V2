@@ -106,6 +106,13 @@ Si deseas habilitar la verificación por correo en el futuro, consulta:
 - [SUPABASE_EMAIL_CONFIG.md](./SUPABASE_EMAIL_CONFIG.md) para los pasos de configuración
 - [SMTP_SETUP_GUIDE.md](./SMTP_SETUP_GUIDE.md) si necesitas configurar un proveedor SMTP personalizado
 
+### 📂 Almacenamiento de archivos
+
+Los apuntes subidos se almacenan en **AWS S3** (no en el filesystem del servidor). Sigue [S3_SETUP.md](./S3_SETUP.md) para:
+- Crear el bucket y las credenciales IAM
+- Configurar las variables `AWS_*` en Render
+- Entender cómo funcionan los archivos temporales y la conversión DOC → PDF
+
 ### Ejemplo de uso:
 
 ```typescript
