@@ -1,8 +1,8 @@
 export function getApiBase(): string {
   const env = (import.meta as unknown).env || {};
   const fromEnv = env.VITE_API_URL as string | undefined;
-  // Default to backend with global /api prefix
-  return (fromEnv && fromEnv.trim().length > 0) ? fromEnv : 'http://localhost:3000/api';
+  // Default to Render backend when no env is provided
+  return (fromEnv && fromEnv.trim().length > 0) ? fromEnv : 'https://brainy-v2.onrender.com/api';
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
