@@ -13,7 +13,7 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ userName, onLogout, onUploadClick, onChatClick, onHomeClick, onCurriculumClick }) => {
   return (
     <header className="bg-card border-b border-border px-4 py-3 shadow-lg">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         {/* Logo y marca */}
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-2">
@@ -24,8 +24,8 @@ const Header: React.FC<HeaderProps> = ({ userName, onLogout, onUploadClick, onCh
           </div>
         </div>
 
-        {/* Navegación central */}
-        <nav className="hidden md:flex items-center space-x-8">
+        {/* Navegación principal (ahora visible también en móvil) */}
+        <nav className="flex flex-wrap items-center gap-4 text-sm md:text-base">
           <button
             onClick={onHomeClick}
             className="text-foreground hover:text-primary transition-colors duration-200 font-medium"
@@ -47,7 +47,7 @@ const Header: React.FC<HeaderProps> = ({ userName, onLogout, onUploadClick, onCh
         {onChatClick && (
           <button
             onClick={onChatClick}
-            className="hidden lg:flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-blue-600 text-white px-4 py-2 rounded-lg hover:from-purple-600 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+            className="flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-blue-600 text-white px-3 py-2 rounded-lg hover:from-purple-600 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl text-xs md:text-sm"
           >
             <MessageCircle className="w-4 h-4" />
             <span className="font-medium">Chatea con Brainy</span>
@@ -55,7 +55,7 @@ const Header: React.FC<HeaderProps> = ({ userName, onLogout, onUploadClick, onCh
         )}
 
         {/* Acciones y perfil */}
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2 md:space-x-4">
           {/* Iconos de acción */}
           <button className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-all duration-200">
             <Bell className="w-5 h-5" />
@@ -85,7 +85,7 @@ const Header: React.FC<HeaderProps> = ({ userName, onLogout, onUploadClick, onCh
             )}
           </div>
 
-          {/* Menú móvil */}
+          {/* Menú móvil (placeholder, por si luego se quiere usar) */}
           <button className="md:hidden p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-all duration-200">
             <Menu className="w-5 h-5" />
           </button>
